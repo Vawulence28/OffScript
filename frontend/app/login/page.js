@@ -30,6 +30,11 @@ export default function LoginPage() {
         throw new Error(data.error || 'Failed to sign in.');
       }
 
+      // 1. Save the token received from the backend
+      if (data.token) {
+        localStorage.setItem('token', data.token);
+      }
+
       router.push('/dashboard');
     } catch (err) {
       setError(err.message);

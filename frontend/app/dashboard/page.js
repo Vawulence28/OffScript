@@ -11,41 +11,27 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const token = localStorage.getItem('token');
-
-    if (!token) {
-      router.push('/login');
-      return;
-    }
-
-    // Verify Host Authentication & Fetch Episodes using Authorization Bearer token
+    // Verify Cookie-based Authentication & Fetch Episodes
     Promise.all([
       fetch(`${process.env.NEXT_PUBLIC_API_URL}/auth/me`, {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
+        credentials: 'include',
       }).then(async (res) => {
         if (!res.ok) throw new Error('Unauthorized');
         return res.json();
       }),
       fetch(`${process.env.NEXT_PUBLIC_API_URL}/episodes`, {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
+        credentials: 'include',
       }).then(async (res) => {
         if (!res.ok) throw new Error('Failed to fetch episodes');
         return res.json();
       }),
     ])
       .then(([authData, epData]) => {
-        setUser(authData.user || authData);
+        setUser(authData.user);
         setEpisodes(epData.episodes || epData || []);
       })
       .catch((err) => {
-        console.error('Dashboard auth error:', err);
-        localStorage.removeItem('token');
+        console.error('Dashboard authentication error:', err);
         router.push('/login');
       })
       .finally(() => {
@@ -53,8 +39,15 @@ export default function DashboardPage() {
       });
   }, [router]);
 
-  const handleLogout = () => {
-    localStorage.removeItem('token');
+  const handleLogout = async () => {
+    try {
+      await fetch(`${process.env.NEXT_PUBLIC_API_URL}/auth/logout`, {
+        method: 'POST',
+        credentials: 'include',
+      });
+    } catch (err) {
+      console.error('Logout error:', err);
+    }
     router.push('/login');
   };
 
@@ -83,7 +76,7 @@ export default function DashboardPage() {
         <div className="flex items-center gap-4">
           <div className="flex items-center gap-2 px-3 py-1.5 bg-zinc-900 border border-zinc-800 rounded-lg text-sm text-zinc-300">
             <Shield className="w-4 h-4 text-emerald-500" />
-            <span>{user?.full_name || user?.email || 'Host'}</span>
+            <span>{user?.full_name || 'Host'}</span>
           </div>
           <button
             onClick={() => router.push('/settings')}

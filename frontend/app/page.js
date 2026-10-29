@@ -1,5 +1,6 @@
 'use client';
 
+import Image from 'next/image';
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
@@ -105,13 +106,14 @@ export default function LandingPage() {
       <header className="sticky top-0 z-50 border-b border-zinc-800/80 bg-zinc-950/80 backdrop-blur-md px-6 py-4">
         <div className="max-w-7xl mx-auto flex items-center justify-between">
           <div className="flex items-center gap-3 cursor-pointer" onClick={() => router.push('/')}>
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-rose-600 to-rose-400 border border-rose-500/30 flex items-center justify-center text-white shadow-lg shadow-rose-600/20">
-              <Radio className="w-5 h-5 animate-pulse" />
-            </div>
-            <div>
-              <span className="font-extrabold tracking-tight text-white text-xl block leading-none">OFFSCRIPT</span>
-              <span className="text-[10px] text-zinc-400 font-mono tracking-widest uppercase">Real Conversations</span>
-            </div>
+            <Image 
+              src="/logo.png" 
+              alt="OFFSCRIPT Logo" 
+              width={160} 
+              height={40} 
+              priority 
+              className="object-contain"
+            />
           </div>
 
           <nav className="hidden lg:flex items-center gap-8 text-xs font-medium text-zinc-400">

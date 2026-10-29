@@ -112,7 +112,7 @@ export default function LandingPage() {
               width={160} 
               height={40} 
               priority 
-              className="object-contain"
+              className="object-contain mix-blend-screen" 
             />
           </div>
 

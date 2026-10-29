@@ -58,15 +58,10 @@ const login = async (req, res, next) => {
     const tokenPayload = { id: user.id, email: user.email, role: user.role, full_name: user.full_name };
     const token = jwt.sign(tokenPayload, process.env.JWT_SECRET || 'fallback_secret', { expiresIn: '7d' });
 
-    res.cookie('token', token, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'strict',
-      maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
-    });
-
+    // Return the token directly in the JSON response for Bearer auth
     return res.json({
       message: 'Logged in successfully.',
+      token,
       user: {
         id: user.id,
         email: user.email,
@@ -80,11 +75,7 @@ const login = async (req, res, next) => {
 };
 
 const logout = (req, res) => {
-  res.clearCookie('token', {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: 'strict'
-  });
+  // With token-based localStorage auth, logout is handled on the client side by clearing localStorage.
   return res.json({ message: 'Logged out successfully.' });
 };
 

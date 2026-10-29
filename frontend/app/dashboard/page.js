@@ -25,7 +25,7 @@ export default function DashboardPage() {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json',
         },
-      }).then((res) => {
+      }).then(async (res) => {
         if (!res.ok) throw new Error('Unauthorized');
         return res.json();
       }),
@@ -34,16 +34,17 @@ export default function DashboardPage() {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json',
         },
-      }).then((res) => {
+      }).then(async (res) => {
         if (!res.ok) throw new Error('Failed to fetch episodes');
         return res.json();
       }),
     ])
       .then(([authData, epData]) => {
-        setUser(authData.user);
-        setEpisodes(epData.episodes || []);
+        setUser(authData.user || authData);
+        setEpisodes(epData.episodes || epData || []);
       })
-      .catch(() => {
+      .catch((err) => {
+        console.error('Dashboard auth error:', err);
         localStorage.removeItem('token');
         router.push('/login');
       })
@@ -52,7 +53,7 @@ export default function DashboardPage() {
       });
   }, [router]);
 
-  const handleLogout = async () => {
+  const handleLogout = () => {
     localStorage.removeItem('token');
     router.push('/login');
   };
@@ -82,7 +83,7 @@ export default function DashboardPage() {
         <div className="flex items-center gap-4">
           <div className="flex items-center gap-2 px-3 py-1.5 bg-zinc-900 border border-zinc-800 rounded-lg text-sm text-zinc-300">
             <Shield className="w-4 h-4 text-emerald-500" />
-            <span>{user?.full_name}</span>
+            <span>{user?.full_name || user?.email || 'Host'}</span>
           </div>
           <button
             onClick={() => router.push('/settings')}

@@ -21,19 +21,23 @@ export default function LoginPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password }),
-        credentials: 'include',
       });
 
       const data = await res.json();
 
       if (!res.ok) {
-        throw new Error(data.error || 'Failed to sign in.');
+        throw new Error(data.error || data.message || 'Failed to sign in.');
       }
 
-      // 1. Save the token received from the backend
-      if (data.token) {
-        localStorage.setItem('token', data.token);
+      // Extract token across common naming conventions
+      const token = data.token || data.accessToken || data.access_token;
+
+      if (!token) {
+        throw new Error('Authentication token missing from server response.');
       }
+
+      // Save token to localStorage for authenticated requests
+      localStorage.setItem('token', token);
 
       router.push('/dashboard');
     } catch (err) {

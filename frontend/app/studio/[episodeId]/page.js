@@ -131,7 +131,7 @@ function StudioContent({ params }) {
 
         const pairingToken = data.pairing.token;
         if (isMounted) {
-          setPairingUrl(`${window.location.origin}/speaker/join?token=${pairingToken}`);
+          setPairingUrl(`${window.location.origin}/mobile-camera?token=${pairingToken}`);
         }
 
         // 2. Setup Socket.io Signaling

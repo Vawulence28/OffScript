@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { Radio, Plus, Calendar, Edit3, Trash2, ArrowLeft, Clock, CheckCircle2, Archive, FileText } from 'lucide-react';
 
@@ -11,37 +11,116 @@ export default function EpisodesDashboard() {
   const [filter, setFilter] = useState('');
   const [error, setError] = useState('');
 
-  const fetchEpisodes = async (statusFilter = '') => {
+  const fetchEpisodes = useCallback(async (statusFilter = '') => {
     setLoading(true);
+    setError('');
+
+    const token = localStorage.getItem('token');
+    if (!token) {
+      router.push('/login');
+      return;
+    }
+
     try {
       let url = `${process.env.NEXT_PUBLIC_API_URL}/episodes`;
       if (statusFilter) url += `?status=${statusFilter}`;
 
-      const res = await fetch(url, { credentials: 'include' });
+      const res = await fetch(url, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to fetch episodes.');
-      setEpisodes(data.episodes);
+      
+      setEpisodes(data.episodes || []);
     } catch (err) {
       setError(err.message);
+      if (err.message.includes('Unauthorized') || err.message.includes('token')) {
+        localStorage.removeItem('token');
+        router.push('/login');
+      }
     } finally {
       setLoading(false);
     }
-  };
+  }, [router]);
 
   useEffect(() => {
-    fetchEpisodes(filter);
-  }, [filter]);
+    let isMounted = true;
+
+    const loadEpisodes = async () => {
+      setLoading(true);
+      setError('');
+
+      const token = localStorage.getItem('token');
+      if (!token) {
+        router.push('/login');
+        return;
+      }
+
+      try {
+        let url = `${process.env.NEXT_PUBLIC_API_URL}/episodes`;
+        if (filter) url += `?status=${filter}`;
+
+        const res = await fetch(url, {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+        });
+
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Failed to fetch episodes.');
+        
+        if (isMounted) {
+          setEpisodes(data.episodes || []);
+        }
+      } catch (err) {
+        if (isMounted) {
+          setError(err.message);
+          if (err.message.includes('Unauthorized') || err.message.includes('token')) {
+            localStorage.removeItem('token');
+            router.push('/login');
+          }
+        }
+      } finally {
+        if (isMounted) {
+          setLoading(false);
+        }
+      }
+    };
+
+    loadEpisodes();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [filter, router]);
 
   const handleDelete = async (id) => {
     if (!confirm('Are you sure you want to delete this episode?')) return;
+
+    const token = localStorage.getItem('token');
+    if (!token) {
+      router.push('/login');
+      return;
+    }
+
     try {
       const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/episodes/${id}`, {
         method: 'DELETE',
-        credentials: 'include',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
       });
+
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to delete episode.');
-      setEpisodes(episodes.filter((ep) => ep.id !== id));
+      
+      setEpisodes((prev) => prev.filter((ep) => ep.id !== id));
     } catch (err) {
       alert(err.message);
     }

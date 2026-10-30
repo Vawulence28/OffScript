@@ -17,15 +17,28 @@ function EpisodeGraphicsContent({ params }) {
   const [error, setError] = useState('');
 
   const fetchGraphics = async () => {
+    const token = localStorage.getItem('token');
+    if (!token) {
+      router.push('/login');
+      return;
+    }
+
     try {
       const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/episodes/${episodeId}/lower-thirds`, {
-        credentials: 'include',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to fetch lower thirds.');
-      setLowerThirds(data.lowerThirds);
+      setLowerThirds(data.lowerThirds || []);
     } catch (err) {
       setError(err.message);
+      if (err.message.includes('Unauthorized') || err.message.includes('token')) {
+        localStorage.removeItem('token');
+        router.push('/login');
+      }
     } finally {
       setLoading(false);
     }
@@ -33,19 +46,69 @@ function EpisodeGraphicsContent({ params }) {
 
   useEffect(() => {
     if (!episodeId) return;
-    fetchGraphics();
-  }, [episodeId]);
+
+    let isMounted = true;
+
+    const loadGraphics = async () => {
+      const token = localStorage.getItem('token');
+      if (!token) {
+        router.push('/login');
+        return;
+      }
+
+      try {
+        const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/episodes/${episodeId}/lower-thirds`, {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Failed to fetch lower thirds.');
+        
+        if (isMounted) {
+          setLowerThirds(data.lowerThirds || []);
+        }
+      } catch (err) {
+        if (isMounted) {
+          setError(err.message);
+          if (err.message.includes('Unauthorized') || err.message.includes('token')) {
+            localStorage.removeItem('token');
+            router.push('/login');
+          }
+        }
+      } finally {
+        if (isMounted) {
+          setLoading(false);
+        }
+      }
+    };
+
+    loadGraphics();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [episodeId, router]);
 
   const handleCreate = async (e) => {
     e.preventDefault();
     setSubmitting(true);
     setError('');
 
+    const token = localStorage.getItem('token');
+    if (!token) {
+      router.push('/login');
+      return;
+    }
+
     try {
       const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/episodes/${episodeId}/lower-thirds`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
         body: JSON.stringify({ title, subtitle }),
       });
       const data = await res.json();
@@ -62,10 +125,19 @@ function EpisodeGraphicsContent({ params }) {
   };
 
   const handleToggle = async (id) => {
+    const token = localStorage.getItem('token');
+    if (!token) {
+      router.push('/login');
+      return;
+    }
+
     try {
       const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/lower-thirds/${id}/toggle`, {
         method: 'POST',
-        credentials: 'include',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to toggle graphic.');
@@ -77,10 +149,20 @@ function EpisodeGraphicsContent({ params }) {
 
   const handleDelete = async (id) => {
     if (!confirm('Delete this lower third?')) return;
+
+    const token = localStorage.getItem('token');
+    if (!token) {
+      router.push('/login');
+      return;
+    }
+
     try {
       const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/lower-thirds/${id}`, {
         method: 'DELETE',
-        credentials: 'include',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to delete graphic.');

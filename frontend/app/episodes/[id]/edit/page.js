@@ -22,8 +22,18 @@ function EditEpisodeContent({ params }) {
 
   useEffect(() => {
     if (!episodeId) return;
+
+    const token = localStorage.getItem('token');
+    if (!token) {
+      router.push('/login');
+      return;
+    }
+
     fetch(`${process.env.NEXT_PUBLIC_API_URL}/episodes/${episodeId}`, {
-      credentials: 'include',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
     })
       .then(async (res) => {
         const data = await res.json();
@@ -34,9 +44,15 @@ function EditEpisodeContent({ params }) {
         setStatus(data.episode.status || 'DRAFT');
         setScheduledFor(data.episode.scheduled_for ? data.episode.scheduled_for.slice(0, 16) : '');
       })
-      .catch((err) => setError(err.message))
+      .catch((err) => {
+        setError(err.message);
+        if (err.message.includes('Unauthorized') || err.message.includes('token')) {
+          localStorage.removeItem('token');
+          router.push('/login');
+        }
+      })
       .finally(() => setLoading(false));
-  }, [episodeId]);
+  }, [episodeId, router]);
 
   const handleUpdate = async (e) => {
     e.preventDefault();
@@ -44,11 +60,19 @@ function EditEpisodeContent({ params }) {
     setError('');
     setSuccess('');
 
+    const token = localStorage.getItem('token');
+    if (!token) {
+      router.push('/login');
+      return;
+    }
+
     try {
       const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/episodes/${episodeId}`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
         body: JSON.stringify({
           title,
           description,

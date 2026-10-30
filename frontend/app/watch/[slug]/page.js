@@ -22,26 +22,39 @@ function PublicWatchContent({ params }) {
   useEffect(() => {
     if (!slug) return;
 
-    // Fetch public episode details using the route defined in commentRoutes.js
+    let isMounted = true;
+
+    // Fetch public episode details using public route
     fetch(`${process.env.NEXT_PUBLIC_API_URL}/public/episodes/${slug}`)
       .then(async (res) => {
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || 'Failed to load episode.');
         const found = data.episode;
         if (!found) throw new Error('Episode not found.');
-        setEpisode(found);
+        
+        if (isMounted) {
+          setEpisode(found);
+        }
 
         // Fetch initial audience chat comments
         return fetch(`${process.env.NEXT_PUBLIC_API_URL}/episodes/${found.id}/comments`);
       })
       .then(async (res) => {
-        if (res && res.ok) {
+        if (res && res.ok && isMounted) {
           const data = await res.json();
           setComments(data.comments || []);
         }
       })
-      .catch((err) => setError(err.message))
-      .finally(() => setLoading(false));
+      .catch((err) => {
+        if (isMounted) setError(err.message);
+      })
+      .finally(() => {
+        if (isMounted) setLoading(false);
+      });
+
+    return () => {
+      isMounted = false;
+    };
   }, [slug]);
 
   // Connect socket for real-time live audience chat

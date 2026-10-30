@@ -19,11 +19,19 @@ export default function NewEpisodePage() {
     setError('');
     setLoading(true);
 
+    const token = localStorage.getItem('token');
+    if (!token) {
+      router.push('/login');
+      return;
+    }
+
     try {
       const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/episodes`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
         body: JSON.stringify({
           title,
           description,
@@ -39,6 +47,10 @@ export default function NewEpisodePage() {
       router.push('/episodes');
     } catch (err) {
       setError(err.message);
+      if (err.message.includes('Unauthorized') || err.message.includes('token')) {
+        localStorage.removeItem('token');
+        router.push('/login');
+      }
     } finally {
       setLoading(false);
     }

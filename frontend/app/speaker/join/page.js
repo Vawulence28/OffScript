@@ -9,8 +9,8 @@ function SpeakerJoinContent() {
   const token = searchParams.get('token');
 
   const [invitation, setInvitation] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(Boolean(token));
+  const [error, setError] = useState(!token ? 'Missing invitation token.' : '');
   const [joinedWaitingRoom, setJoinedWaitingRoom] = useState(false);
 
   const [hasPermissions, setHasPermissions] = useState(false);
@@ -21,27 +21,36 @@ function SpeakerJoinContent() {
   const mediaStreamRef = useRef(null);
 
   useEffect(() => {
-    if (!token) {
-      setError('Missing invitation token.');
-      setLoading(false);
-      return;
-    }
+    if (!token) return;
+
+    let isMounted = true;
 
     fetch(`${process.env.NEXT_PUBLIC_API_URL}/verify/${token}`)
       .then(async (res) => {
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || 'Invalid invitation.');
-        setInvitation(data.invitation);
-        if (data.invitation.status === 'WAITING' || data.invitation.status === 'ADMITTED') {
-          setJoinedWaitingRoom(true);
+        if (isMounted) {
+          setInvitation(data.invitation);
+          if (data.invitation.status === 'WAITING' || data.invitation.status === 'ADMITTED') {
+            setJoinedWaitingRoom(true);
+          }
         }
       })
-      .catch((err) => setError(err.message))
-      .finally(() => setLoading(false));
+      .catch((err) => {
+        if (isMounted) setError(err.message);
+      })
+      .finally(() => {
+        if (isMounted) setLoading(false);
+      });
+
+    return () => {
+      isMounted = false;
+    };
   }, [token]);
 
   // Request camera and microphone for pre-join test
   const startEquipmentTest = async () => {
+    setError('');
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
       mediaStreamRef.current = stream;
@@ -55,6 +64,7 @@ function SpeakerJoinContent() {
   };
 
   const enterWaitingRoom = async () => {
+    setError('');
     try {
       const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/join-waiting-room`, {
         method: 'POST',
@@ -70,16 +80,26 @@ function SpeakerJoinContent() {
   };
 
   useEffect(() => {
-    if (invitation) {
-      const poll = setInterval(async () => {
+    if (!token || !invitation) return;
+
+    let isMounted = true;
+
+    const pollInterval = setInterval(async () => {
+      try {
         const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/verify/${token}`);
         const data = await res.json();
-        if (res.ok) {
+        if (res.ok && isMounted) {
           setInvitation(data.invitation);
         }
-      }, 4000);
-      return () => clearInterval(poll);
-    }
+      } catch (e) {
+        console.error('Polling error:', e);
+      }
+    }, 4000);
+
+    return () => {
+      isMounted = false;
+      clearInterval(pollInterval);
+    };
   }, [invitation, token]);
 
   if (loading) {
@@ -90,7 +110,7 @@ function SpeakerJoinContent() {
     );
   }
 
-  if (error) {
+  if (error && !invitation) {
     return (
       <div className="min-h-screen bg-zinc-950 flex flex-col items-center justify-center p-6 text-center">
         <AlertCircle className="w-12 h-12 text-rose-500 mb-3" />
@@ -110,6 +130,12 @@ function SpeakerJoinContent() {
           <h1 className="text-xl font-bold text-white">{invitation?.episode_title}</h1>
           <p className="text-xs text-zinc-400 mt-1">Speaker: <span className="text-zinc-200 font-medium">{invitation?.speaker_name}</span></p>
         </div>
+
+        {error && (
+          <div className="mb-4 bg-rose-500/10 border border-rose-500/30 rounded-lg p-3 text-rose-400 text-xs">
+            {error}
+          </div>
+        )}
 
         {invitation?.status === 'ADMITTED' ? (
           <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-xl p-6 text-center space-y-4">

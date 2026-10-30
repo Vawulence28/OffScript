@@ -20,20 +20,37 @@ function YouTubeDestinationContent({ params }) {
 
   useEffect(() => {
     if (!episodeId) return;
+
+    const token = localStorage.getItem('token');
+    if (!token) {
+      router.push('/login');
+      return;
+    }
+
     fetch(`${process.env.NEXT_PUBLIC_API_URL}/episodes/${episodeId}/youtube`, {
-      credentials: 'include',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
     })
       .then(async (res) => {
         const data = await res.json();
-        if (res.ok && data.destination) {
+        if (!res.ok) throw new Error(data.error || 'Failed to fetch YouTube settings.');
+        if (data.destination) {
           setStreamUrl(data.destination.stream_url || 'rtmp://a.rtmp.youtube.com/live2');
           setIsActive(data.destination.is_active);
           setStatus(data.destination.status);
         }
       })
-      .catch((err) => setError(err.message))
+      .catch((err) => {
+        setError(err.message);
+        if (err.message.includes('Unauthorized') || err.message.includes('token')) {
+          localStorage.removeItem('token');
+          router.push('/login');
+        }
+      })
       .finally(() => setLoading(false));
-  }, [episodeId]);
+  }, [episodeId, router]);
 
   const handleSave = async (e) => {
     e.preventDefault();
@@ -41,11 +58,19 @@ function YouTubeDestinationContent({ params }) {
     setError('');
     setSuccess('');
 
+    const token = localStorage.getItem('token');
+    if (!token) {
+      router.push('/login');
+      return;
+    }
+
     try {
       const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/episodes/${episodeId}/youtube`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
         body: JSON.stringify({
           stream_url: streamUrl,
           stream_key: streamKey,
@@ -116,7 +141,7 @@ function YouTubeDestinationContent({ params }) {
           <div className="flex items-center justify-between py-2 border-b border-zinc-800">
             <div>
               <h3 className="font-semibold text-white text-sm">Enable YouTube Live Egress</h3>
-              <p className="text-xs text-zinc-400">When enabled, OffScript will relay your live studio feed to YouTube Live when you click "Go Live".</p>
+              <p className="text-xs text-zinc-400">When enabled, OffScript will relay your live studio feed to YouTube Live when you click &quot;Go Live&quot;.</p>
             </div>
             <button
               type="button"

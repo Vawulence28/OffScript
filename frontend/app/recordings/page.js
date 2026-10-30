@@ -10,35 +10,72 @@ export default function RecordingsLibraryPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
-  const fetchRecordings = async () => {
-    try {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/recordings`, {
-        credentials: 'include',
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Failed to fetch recordings.');
-      setRecordings(data.recordings);
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setLoading(false);
-    }
-  };
-
   useEffect(() => {
-    fetchRecordings();
-  }, []);
+    let isMounted = true;
+
+    const loadRecordings = async () => {
+      const token = localStorage.getItem('token');
+      if (!token) {
+        router.push('/login');
+        return;
+      }
+
+      try {
+        const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/recordings`, {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Failed to fetch recordings.');
+        
+        if (isMounted) {
+          setRecordings(data.recordings || []);
+        }
+      } catch (err) {
+        if (isMounted) {
+          setError(err.message);
+          if (err.message.includes('Unauthorized') || err.message.includes('token')) {
+            localStorage.removeItem('token');
+            router.push('/login');
+          }
+        }
+      } finally {
+        if (isMounted) {
+          setLoading(false);
+        }
+      }
+    };
+
+    loadRecordings();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [router]);
 
   const handleDelete = async (id) => {
     if (!confirm('Are you sure you want to delete this recording?')) return;
+
+    const token = localStorage.getItem('token');
+    if (!token) {
+      router.push('/login');
+      return;
+    }
+
     try {
       const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/recordings/${id}`, {
         method: 'DELETE',
-        credentials: 'include',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to delete recording.');
-      setRecordings(recordings.filter((r) => r.id !== id));
+      
+      setRecordings((prev) => prev.filter((r) => r.id !== id));
     } catch (err) {
       alert(err.message);
     }
@@ -105,7 +142,7 @@ export default function RecordingsLibraryPage() {
                   <a
                     href={rec.file_url}
                     download
-                    className="flex items-center gap-1.5 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 rounded-lg text-sm font-medium transition-all"
+                    className="flex items-center gap-4 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 rounded-lg text-sm font-medium transition-all"
                   >
                     <Download className="w-4 h-4" />
                     <span>Download</span>

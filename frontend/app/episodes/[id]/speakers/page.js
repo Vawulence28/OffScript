@@ -17,15 +17,28 @@ function EpisodeSpeakersContent({ params }) {
   const [error, setError] = useState('');
 
   const fetchInvitations = async () => {
+    const token = localStorage.getItem('token');
+    if (!token) {
+      router.push('/login');
+      return;
+    }
+
     try {
       const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/episodes/${episodeId}/invitations`, {
-        credentials: 'include',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to fetch invitations.');
-      setInvitations(data.invitations);
+      setInvitations(data.invitations || []);
     } catch (err) {
       setError(err.message);
+      if (err.message.includes('Unauthorized') || err.message.includes('token')) {
+        localStorage.removeItem('token');
+        router.push('/login');
+      }
     } finally {
       setLoading(false);
     }
@@ -33,21 +46,71 @@ function EpisodeSpeakersContent({ params }) {
 
   useEffect(() => {
     if (!episodeId) return;
-    fetchInvitations();
-    const interval = setInterval(fetchInvitations, 5000); // Poll waiting room every 5s
-    return () => clearInterval(interval);
-  }, [episodeId]);
+
+    let isMounted = true;
+
+    const loadInvitations = async () => {
+      const token = localStorage.getItem('token');
+      if (!token) {
+        router.push('/login');
+        return;
+      }
+
+      try {
+        const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/episodes/${episodeId}/invitations`, {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Failed to fetch invitations.');
+        
+        if (isMounted) {
+          setInvitations(data.invitations || []);
+        }
+      } catch (err) {
+        if (isMounted) {
+          setError(err.message);
+          if (err.message.includes('Unauthorized') || err.message.includes('token')) {
+            localStorage.removeItem('token');
+            router.push('/login');
+          }
+        }
+      } finally {
+        if (isMounted) {
+          setLoading(false);
+        }
+      }
+    };
+
+    loadInvitations();
+    const interval = setInterval(loadInvitations, 5000); // Poll waiting room every 5s
+
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+    };
+  }, [episodeId, router]);
 
   const handleInvite = async (e) => {
     e.preventDefault();
     setSubmitting(true);
     setError('');
 
+    const token = localStorage.getItem('token');
+    if (!token) {
+      router.push('/login');
+      return;
+    }
+
     try {
       const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/episodes/${episodeId}/invitations`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
         body: JSON.stringify({ speaker_name: speakerName, speaker_email: speakerEmail }),
       });
       const data = await res.json();
@@ -64,13 +127,22 @@ function EpisodeSpeakersContent({ params }) {
   };
 
   const handleAction = async (id, action) => {
+    const token = localStorage.getItem('token');
+    if (!token) {
+      router.push('/login');
+      return;
+    }
+
     try {
       const endpoint = action === 'admit' ? `/api/invitations/${id}/admit` : action === 'remove' ? `/api/invitations/${id}/remove` : `/api/invitations/${id}`;
       const method = action === 'revoke' ? 'DELETE' : 'POST';
 
       const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL.replace('/api', '')}${endpoint}`, {
         method,
-        credentials: 'include',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Action failed.');

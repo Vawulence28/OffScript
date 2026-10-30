@@ -10,8 +10,8 @@ function MobileCameraContent() {
   const token = searchParams.get('token');
 
   const [session, setSession] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(Boolean(token));
+  const [error, setError] = useState(!token ? 'No pairing token provided.' : '');
   const [streaming, setStreaming] = useState(false);
   const [facingMode, setFacingMode] = useState('environment'); // 'user' or 'environment'
 
@@ -21,21 +21,29 @@ function MobileCameraContent() {
   const pcRef = useRef(null);
 
   useEffect(() => {
-    if (!token) {
-      setError('No pairing token provided.');
-      setLoading(false);
-      return;
-    }
+    if (!token) return;
 
-    // Verify token
+    let isMounted = true;
+
+    // Verify public pairing token
     fetch(`${process.env.NEXT_PUBLIC_API_URL}/pairing/${token}`)
       .then(async (res) => {
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || 'Invalid or expired pairing session.');
-        setSession(data.session);
+        if (isMounted) {
+          setSession(data.session);
+        }
       })
-      .catch((err) => setError(err.message))
-      .finally(() => setLoading(false));
+      .catch((err) => {
+        if (isMounted) setError(err.message);
+      })
+      .finally(() => {
+        if (isMounted) setLoading(false);
+      });
+
+    return () => {
+      isMounted = false;
+    };
   }, [token]);
 
   const startCameraAndBroadcast = async () => {

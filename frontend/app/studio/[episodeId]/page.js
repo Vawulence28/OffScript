@@ -22,31 +22,126 @@ function StudioContent({ params }) {
   const socketRef = useRef(null);
   const pcRef = useRef(null);
 
+  // Defined above useEffect to prevent hoisting / TDZ errors
+  const fetchSpeakers = async () => {
+    const token = localStorage.getItem('token');
+    if (!token) return;
+
+    try {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/episodes/${episodeId}/invitations`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setAdmittedSpeakers((data.invitations || []).filter((i) => i.status === 'ADMITTED'));
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const fetchBroadcastStatus = async () => {
+    const token = localStorage.getItem('token');
+    if (!token) return;
+
+    try {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/media/status/${episodeId}`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+      const data = await res.json();
+      if (res.ok && data.session && data.session.status === 'LIVE') {
+        setIsLive(true);
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
   // Initialize pairing & WebRTC
   useEffect(() => {
     if (!episodeId) return;
 
+    let isMounted = true;
+
+    const fetchSpeakers = async () => {
+      const token = localStorage.getItem('token');
+      if (!token) return;
+
+      try {
+        const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/episodes/${episodeId}/invitations`, {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+        });
+        const data = await res.json();
+        if (res.ok && isMounted) {
+          setAdmittedSpeakers((data.invitations || []).filter((i) => i.status === 'ADMITTED'));
+        }
+      } catch (e) {
+        console.error(e);
+      }
+    };
+
+    const fetchBroadcastStatus = async () => {
+      const token = localStorage.getItem('token');
+      if (!token) return;
+
+      try {
+        const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/media/status/${episodeId}`, {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+        });
+        const data = await res.json();
+        if (res.ok && data.session && data.session.status === 'LIVE' && isMounted) {
+          setIsLive(true);
+        }
+      } catch (e) {
+        console.error(e);
+      }
+    };
+
     const initStudio = async () => {
+      const token = localStorage.getItem('token');
+      if (!token) {
+        router.push('/login');
+        return;
+      }
+
       try {
         // 1. Create Pairing Session for Phone Camera
         const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/pairing`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          credentials: 'include',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
           body: JSON.stringify({ episode_id: episodeId }),
         });
         const data = await res.json();
-        if (!res.ok) throw new Error(data.error);
+        if (!res.ok) throw new Error(data.error || 'Failed to create pairing session.');
 
-        const token = data.pairing.token;
-        setPairingUrl(`${window.location.origin}/mobile-camera?token=${token}`);
+        const pairingToken = data.pairing.token;
+        if (isMounted) {
+          setPairingUrl(`${window.location.origin}/speaker/join?token=${pairingToken}`);
+        }
 
         // 2. Setup Socket.io Signaling
         const socket = io(process.env.NEXT_PUBLIC_API_URL.replace('/api', ''));
         socketRef.current = socket;
-        socket.emit('join-room', token);
+        socket.emit('join-room', pairingToken);
 
-        socket.on('peer-joined', () => setCameraConnected(true));
+        socket.on('peer-joined', () => {
+          if (isMounted) setCameraConnected(true);
+        });
 
         const pc = new RTCPeerConnection({
           iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
@@ -54,7 +149,7 @@ function StudioContent({ params }) {
         pcRef.current = pc;
 
         pc.ontrack = (event) => {
-          if (remoteVideoRef.current && event.streams[0]) {
+          if (remoteVideoRef.current && event.streams[0] && isMounted) {
             remoteVideoRef.current.srcObject = event.streams[0];
             setCameraConnected(true);
           }
@@ -62,7 +157,7 @@ function StudioContent({ params }) {
 
         pc.onicecandidate = (event) => {
           if (event.candidate) {
-            socket.emit('ice-candidate', { room: token, candidate: event.candidate });
+            socket.emit('ice-candidate', { room: pairingToken, candidate: event.candidate });
           }
         };
 
@@ -70,7 +165,7 @@ function StudioContent({ params }) {
           await pc.setRemoteDescription(new RTCSessionDescription(offer));
           const answer = await pc.createAnswer();
           await pc.setLocalDescription(answer);
-          socket.emit('answer', { room: token, answer });
+          socket.emit('answer', { room: pairingToken, answer });
         });
 
         socket.on('ice-candidate', async (candidate) => {
@@ -82,10 +177,16 @@ function StudioContent({ params }) {
         });
 
         // 3. Fetch Admitted Speakers & Broadcast Status
-        fetchSpeakers();
-        fetchBroadcastStatus();
+        await fetchSpeakers();
+        await fetchBroadcastStatus();
       } catch (err) {
-        setError(err.message);
+        if (isMounted) {
+          setError(err.message);
+          if (err.message.includes('Unauthorized') || err.message.includes('token')) {
+            localStorage.removeItem('token');
+            router.push('/login');
+          }
+        }
       }
     };
 
@@ -96,51 +197,35 @@ function StudioContent({ params }) {
     }, 4000);
 
     return () => {
+      isMounted = false;
       clearInterval(pollInterval);
       if (socketRef.current) socketRef.current.disconnect();
       if (pcRef.current) pcRef.current.close();
     };
-  }, [episodeId]);
-
-  const fetchSpeakers = async () => {
-    try {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/episodes/${episodeId}/invitations`, {
-        credentials: 'include',
-      });
-      const data = await res.json();
-      if (res.ok) {
-        setAdmittedSpeakers(data.invitations.filter((i) => i.status === 'ADMITTED'));
-      }
-    } catch (e) {
-      console.error(e);
-    }
-  };
-
-  const fetchBroadcastStatus = async () => {
-    try {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/media/status/${episodeId}`);
-      const data = await res.json();
-      if (res.ok && data.session.status === 'LIVE') {
-        setIsLive(true);
-      }
-    } catch (e) {
-      console.error(e);
-    }
-  };
+  }, [episodeId, router]);
 
   const toggleBroadcast = async () => {
     setLoadingBroadcast(true);
     setError('');
+
+    const token = localStorage.getItem('token');
+    if (!token) {
+      router.push('/login');
+      return;
+    }
+
     try {
       const endpoint = isLive ? '/media/end' : '/media/start';
       const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}${endpoint}`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
         body: JSON.stringify({ episode_id: episodeId }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error);
+      if (!res.ok) throw new Error(data.error || 'Failed to toggle broadcast status.');
 
       setIsLive(!isLive);
     } catch (err) {

@@ -18,17 +18,49 @@ export default function SettingsPage() {
   const [error, setError] = useState('');
 
   useEffect(() => {
-    fetch(`${process.env.NEXT_PUBLIC_API_URL}/settings`, {
-      credentials: 'include',
-    })
-      .then(async (res) => {
+    let isMounted = true;
+
+    const loadSettings = async () => {
+      const token = localStorage.getItem('token');
+      if (!token) {
+        router.push('/login');
+        return;
+      }
+
+      try {
+        const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/settings`, {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+        });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || 'Failed to fetch settings.');
-        setSettings(data.settings);
-      })
-      .catch((err) => setError(err.message))
-      .finally(() => setLoading(false));
-  }, []);
+        
+        if (isMounted) {
+          setSettings(data.settings || {});
+        }
+      } catch (err) {
+        if (isMounted) {
+          setError(err.message);
+          if (err.message.includes('Unauthorized') || err.message.includes('token')) {
+            localStorage.removeItem('token');
+            router.push('/login');
+          }
+        }
+      } finally {
+        if (isMounted) {
+          setLoading(false);
+        }
+      }
+    };
+
+    loadSettings();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [router]);
 
   const handleSave = async (e) => {
     e.preventDefault();
@@ -36,11 +68,19 @@ export default function SettingsPage() {
     setSuccess('');
     setError('');
 
+    const token = localStorage.getItem('token');
+    if (!token) {
+      router.push('/login');
+      return;
+    }
+
     try {
       const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/settings`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
         body: JSON.stringify(settings),
       });
       const data = await res.json();
@@ -101,7 +141,7 @@ export default function SettingsPage() {
             <input
               type="text"
               required
-              value={settings.studio_name}
+              value={settings.studio_name || ''}
               onChange={(e) => setSettings({ ...settings, studio_name: e.target.value })}
               className="w-full px-4 py-2.5 bg-zinc-950 border border-zinc-800 rounded-lg text-zinc-100 text-sm focus:outline-none focus:border-rose-500"
             />
@@ -112,13 +152,13 @@ export default function SettingsPage() {
             <div className="flex items-center gap-4">
               <input
                 type="color"
-                value={settings.brand_color}
+                value={settings.brand_color || '#e11d48'}
                 onChange={(e) => setSettings({ ...settings, brand_color: e.target.value })}
                 className="w-12 h-10 bg-zinc-950 border border-zinc-800 rounded-lg cursor-pointer"
               />
               <input
                 type="text"
-                value={settings.brand_color}
+                value={settings.brand_color || '#e11d48'}
                 onChange={(e) => setSettings({ ...settings, brand_color: e.target.value })}
                 className="w-32 px-4 py-2.5 bg-zinc-950 border border-zinc-800 rounded-lg text-zinc-100 text-sm focus:outline-none"
               />
@@ -132,7 +172,7 @@ export default function SettingsPage() {
             </div>
             <input
               type="checkbox"
-              checked={settings.auto_record}
+              checked={Boolean(settings.auto_record)}
               onChange={(e) => setSettings({ ...settings, auto_record: e.target.checked })}
               className="w-5 h-5 accent-rose-600 rounded cursor-pointer"
             />
@@ -144,7 +184,7 @@ export default function SettingsPage() {
               type="number"
               min={1}
               max={365}
-              value={settings.retention_days}
+              value={settings.retention_days || 30}
               onChange={(e) => setSettings({ ...settings, retention_days: parseInt(e.target.value) })}
               className="w-full px-4 py-2.5 bg-zinc-950 border border-zinc-800 rounded-lg text-zinc-100 text-sm focus:outline-none focus:border-rose-500"
             />

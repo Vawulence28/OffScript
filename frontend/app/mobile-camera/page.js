@@ -3,7 +3,7 @@
 import { useEffect, useState, useRef, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { io } from 'socket.io-client';
-import { Radio, Video, VideoOff, RefreshCw, AlertCircle, CheckCircle2, Mic } from 'lucide-react';
+import { Radio, Video, VideoOff, RefreshCw, AlertCircle } from 'lucide-react';
 
 function MobileCameraContent() {
   const searchParams = useSearchParams();
@@ -49,9 +49,19 @@ function MobileCameraContent() {
   const startCameraAndBroadcast = async () => {
     setError('');
     try {
+      // High-definition camera constraints for sharp 1080p capture
       const constraints = {
-        video: { facingMode: { ideal: facingMode }, width: { ideal: 1280 }, height: { ideal: 720 } },
-        audio: true,
+        video: {
+          facingMode: { ideal: facingMode },
+          width: { ideal: 1920, min: 1280 },
+          height: { ideal: 1080, min: 720 },
+          frameRate: { ideal: 30, min: 24 },
+        },
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+        },
       };
 
       const stream = await navigator.mediaDevices.getUserMedia(constraints);
@@ -61,7 +71,9 @@ function MobileCameraContent() {
       }
 
       // Connect Signaling & WebRTC
-      const socket = io(process.env.NEXT_PUBLIC_API_URL.replace('/api', ''));
+      const socket = io(process.env.NEXT_PUBLIC_API_URL.replace('/api', ''), {
+        transports: ['polling', 'websocket'],
+      });
       socketRef.current = socket;
 
       socket.emit('join-room', token);
@@ -71,7 +83,24 @@ function MobileCameraContent() {
       });
       pcRef.current = pc;
 
+      // Add tracks to peer connection
       stream.getTracks().forEach((track) => pc.addTrack(track, stream));
+
+      // Force high bitrate encoding parameters on the video sender
+      const senders = pc.getSenders();
+      const videoSender = senders.find((s) => s.track && s.track.kind === 'video');
+      if (videoSender) {
+        try {
+          const parameters = videoSender.getParameters();
+          if (!parameters.encodings) {
+            parameters.encodings = [{}];
+          }
+          parameters.encodings[0].maxBitrate = 4000000; // 4 Mbps for crisp HD
+          await videoSender.setParameters(parameters);
+        } catch (err) {
+          console.warn('Could not set maxBitrate parameters:', err);
+        }
+      }
 
       pc.onicecandidate = (event) => {
         if (event.candidate) {
@@ -98,7 +127,7 @@ function MobileCameraContent() {
       setStreaming(true);
     } catch (err) {
       console.error(err);
-      setError('Camera/Microphone permission denied or unsupported device.');
+      setError('Camera/Microphone permission denied or unsupported device resolution.');
     }
   };
 
@@ -116,8 +145,7 @@ function MobileCameraContent() {
     setFacingMode(newMode);
     if (streaming) {
       stopCamera();
-      // Restart with new mode
-      setTimeout(() => startCameraAndBroadcast(), 300);
+      setTimeout(() => startCameraAndBroadcast(), 400);
     }
   };
 
@@ -144,10 +172,10 @@ function MobileCameraContent() {
       <header className="border-b border-zinc-800 bg-zinc-900/50 p-4 flex items-center justify-between">
         <div className="flex items-center gap-2">
           <Radio className="w-5 h-5 text-rose-500 animate-pulse" />
-          <span className="font-bold text-white text-sm">OffScript Phone Cam</span>
+          <span className="font-bold text-white text-sm">OffScript HD Phone Cam</span>
         </div>
         <span className="text-xs bg-zinc-800 text-zinc-300 px-2.5 py-1 rounded-full truncate max-w-[180px]">
-          {session?.episode_title}
+          {session?.episode_title || 'Live Broadcast'}
         </span>
       </header>
 
@@ -162,14 +190,14 @@ function MobileCameraContent() {
           />
           {!streaming && (
             <div className="absolute inset-0 flex flex-col items-center justify-center bg-zinc-950/80 p-6 text-center">
-              <Video className="w-12 h-12 text-zinc-600 mb-3" />
-              <h3 className="text-white font-semibold mb-1">Camera Ready</h3>
-              <p className="text-xs text-zinc-400 mb-6">Tap start below to begin streaming your camera feed to the laptop studio.</p>
+              <Video className="w-12 h-12 text-rose-500 mb-3" />
+              <h3 className="text-white font-semibold mb-1">HD Camera Ready</h3>
+              <p className="text-xs text-zinc-400 mb-6">Tap start below to begin streaming high-definition video to your studio control room.</p>
               <button
                 onClick={startCameraAndBroadcast}
                 className="px-6 py-3 bg-rose-600 hover:bg-rose-500 text-white font-medium rounded-xl text-sm shadow-lg shadow-rose-600/20"
               >
-                Start Camera & Stream
+                Start HD Camera & Stream
               </button>
             </div>
           )}

@@ -21,7 +21,6 @@ export default function LoginPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password }),
-        credentials: 'include', // Crucial for saving the HTTP-only cookie sent by backend
       });
 
       const data = await res.json();
@@ -29,6 +28,13 @@ export default function LoginPage() {
       if (!res.ok) {
         throw new Error(data.error || 'Failed to sign in.');
       }
+
+      if (!data.token) {
+        throw new Error('Token missing from server response.');
+      }
+
+      // Save JWT token to localStorage
+      localStorage.setItem('token', data.token);
 
       router.push('/dashboard');
     } catch (err) {

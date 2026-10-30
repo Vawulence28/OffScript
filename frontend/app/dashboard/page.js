@@ -11,16 +11,29 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Verify Cookie-based Authentication & Fetch Episodes
+    const token = localStorage.getItem('token');
+
+    if (!token) {
+      router.push('/login');
+      return;
+    }
+
+    // Verify Bearer Token Authentication & Fetch Episodes
     Promise.all([
       fetch(`${process.env.NEXT_PUBLIC_API_URL}/auth/me`, {
-        credentials: 'include',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
       }).then(async (res) => {
         if (!res.ok) throw new Error('Unauthorized');
         return res.json();
       }),
       fetch(`${process.env.NEXT_PUBLIC_API_URL}/episodes`, {
-        credentials: 'include',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
       }).then(async (res) => {
         if (!res.ok) throw new Error('Failed to fetch episodes');
         return res.json();
@@ -32,6 +45,7 @@ export default function DashboardPage() {
       })
       .catch((err) => {
         console.error('Dashboard authentication error:', err);
+        localStorage.removeItem('token');
         router.push('/login');
       })
       .finally(() => {
@@ -39,15 +53,8 @@ export default function DashboardPage() {
       });
   }, [router]);
 
-  const handleLogout = async () => {
-    try {
-      await fetch(`${process.env.NEXT_PUBLIC_API_URL}/auth/logout`, {
-        method: 'POST',
-        credentials: 'include',
-      });
-    } catch (err) {
-      console.error('Logout error:', err);
-    }
+  const handleLogout = () => {
+    localStorage.removeItem('token');
     router.push('/login');
   };
 

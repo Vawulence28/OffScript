@@ -145,18 +145,19 @@ function StudioContent({ params }) {
           });
         });
 
-        // Handle Guest Offer & Stream Ingestion
+        // Handle Guest Offer & Stream Ingestion in Studio
         socket.on('speaker-offer', async ({ speakerId, offer }) => {
           let pc = currentSpeakerPCs.get(speakerId);
           if (!pc) {
             pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
             currentSpeakerPCs.set(speakerId, pc);
 
+            // Bind incoming guest track directly to the corresponding video reference
             pc.ontrack = (event) => {
               const videoEl = speakerVideoRefs.current[speakerId];
               if (videoEl && event.streams[0]) {
                 videoEl.srcObject = event.streams[0];
-                videoEl.play().catch((e) => console.log('Auto-play error:', e));
+                videoEl.play().catch((e) => console.log('Studio guest video play error:', e));
               }
             };
 
@@ -179,7 +180,7 @@ function StudioContent({ params }) {
             try {
               await pc.addIceCandidate(new RTCIceCandidate(candidate));
             } catch (e) {
-              console.error(e);
+              console.error('Error adding ICE candidate in studio:', e);
             }
           }
         });
@@ -191,7 +192,7 @@ function StudioContent({ params }) {
         hostPC.ontrack = (event) => {
           if (remoteVideoRef.current && event.streams[0] && isMounted) {
             remoteVideoRef.current.srcObject = event.streams[0];
-            remoteVideoRef.current.play().catch((e) => console.log('Auto-play error:', e));
+            remoteVideoRef.current.play().catch((e) => console.log('Host video play error:', e));
             setCameraConnected(true);
           }
         };
@@ -217,7 +218,7 @@ function StudioContent({ params }) {
           }
         });
 
-        // Relay Studio Stream to Audience Request with Combined Tracks (Host + Guests)
+        // Relay Studio Stream to Audience Request
         socket.on('request-broadcast-stream', async (audienceSocketId) => {
           try {
             const audiencePC = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });

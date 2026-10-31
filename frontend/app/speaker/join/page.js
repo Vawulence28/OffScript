@@ -9,7 +9,6 @@ function SpeakerJoinContent() {
   const searchParams = useSearchParams();
   const token = searchParams.get('token');
 
-  // Initialize state directly to avoid synchronous setState calls inside useEffect
   const [invitation, setInvitation] = useState(null);
   const [error, setError] = useState(!token ? 'No invitation token provided.' : '');
   const [status, setStatus] = useState(!token ? 'ERROR' : 'VERIFYING'); // VERIFYING | LOBBY | WAITING | ADMITTED | REJECTED | ERROR
@@ -63,7 +62,6 @@ function SpeakerJoinContent() {
       setInvitation(data.invitation);
       setStatus('WAITING');
 
-      // Initialize Socket connection to listen for host admission
       const socket = io(process.env.NEXT_PUBLIC_API_URL.replace('/api', ''), {
         transports: ['polling', 'websocket'],
       });
@@ -98,6 +96,7 @@ function SpeakerJoinContent() {
 
       if (localVideoRef.current) {
         localVideoRef.current.srcObject = stream;
+        localVideoRef.current.play().catch((e) => console.log('Local video play error:', e));
       }
 
       const socket = socketRef.current;
@@ -106,13 +105,14 @@ function SpeakerJoinContent() {
       });
       pcRef.current = pc;
 
-      // Send guest camera/mic tracks to studio
+      // Add local tracks to peer connection
       stream.getTracks().forEach((track) => pc.addTrack(track, stream));
 
-      // Receive incoming studio/host feed so the guest can see everyone
+      // Receive incoming studio feed
       pc.ontrack = (event) => {
         if (remoteStudioVideoRef.current && event.streams[0]) {
           remoteStudioVideoRef.current.srcObject = event.streams[0];
+          remoteStudioVideoRef.current.play().catch((e) => console.log('Remote studio video play error:', e));
         }
       };
 
@@ -131,7 +131,7 @@ function SpeakerJoinContent() {
           try {
             await pc.addIceCandidate(new RTCIceCandidate(candidate));
           } catch (e) {
-            console.error('Error adding candidate on guest portal:', e);
+            console.error('Error adding ICE candidate on guest portal:', e);
           }
         }
       });
@@ -202,7 +202,6 @@ function SpeakerJoinContent() {
         {status === 'ADMITTED' && (
           <div className="w-full space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {/* Local Guest Self View */}
               <div className="relative aspect-video bg-zinc-900 border border-zinc-800 rounded-2xl overflow-hidden shadow-2xl">
                 <video ref={localVideoRef} autoPlay playsInline muted className="w-full h-full object-cover" />
                 <div className="absolute top-3 left-3 bg-zinc-950/70 backdrop-blur-md px-3 py-1 rounded-lg border border-zinc-800 text-[10px] font-medium text-emerald-400 flex items-center gap-1.5">
@@ -211,7 +210,6 @@ function SpeakerJoinContent() {
                 </div>
               </div>
 
-              {/* Incoming Live Studio Feed (Host + Speakers) */}
               <div className="relative aspect-video bg-zinc-900 border border-zinc-800 rounded-2xl overflow-hidden shadow-2xl flex items-center justify-center">
                 <video ref={remoteStudioVideoRef} autoPlay playsInline muted={false} className="w-full h-full object-cover" />
                 <div className="absolute top-3 left-3 bg-zinc-950/70 backdrop-blur-md px-3 py-1 rounded-lg border border-zinc-800 text-[10px] font-medium text-rose-400 flex items-center gap-1.5">

@@ -156,6 +156,7 @@ function StudioContent({ params }) {
               const videoEl = speakerVideoRefs.current[speakerId];
               if (videoEl && event.streams[0]) {
                 videoEl.srcObject = event.streams[0];
+                videoEl.play().catch((e) => console.log('Auto-play error:', e));
               }
             };
 
@@ -190,6 +191,7 @@ function StudioContent({ params }) {
         hostPC.ontrack = (event) => {
           if (remoteVideoRef.current && event.streams[0] && isMounted) {
             remoteVideoRef.current.srcObject = event.streams[0];
+            remoteVideoRef.current.play().catch((e) => console.log('Auto-play error:', e));
             setCameraConnected(true);
           }
         };
@@ -215,12 +217,27 @@ function StudioContent({ params }) {
           }
         });
 
-        // Relay Studio Stream to Audience Request
+        // Relay Studio Stream to Audience Request with Combined Tracks (Host + Guests)
         socket.on('request-broadcast-stream', async (audienceSocketId) => {
-          if (remoteVideoRef.current && remoteVideoRef.current.srcObject) {
+          try {
             const audiencePC = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
-            const stream = remoteVideoRef.current.srcObject;
-            stream.getTracks().forEach((track) => audiencePC.addTrack(track, stream));
+            const combinedStream = new MediaStream();
+
+            if (remoteVideoRef.current && remoteVideoRef.current.srcObject) {
+              remoteVideoRef.current.srcObject.getTracks().forEach((track) => combinedStream.addTrack(track));
+            }
+
+            Object.values(speakerVideoRefs.current).forEach((videoEl) => {
+              if (videoEl && videoEl.srcObject) {
+                videoEl.srcObject.getTracks().forEach((track) => {
+                  if (!combinedStream.getTracks().some((t) => t.id === track.id)) {
+                    combinedStream.addTrack(track);
+                  }
+                });
+              }
+            });
+
+            combinedStream.getTracks().forEach((track) => audiencePC.addTrack(track, combinedStream));
 
             audiencePC.onicecandidate = (event) => {
               if (event.candidate) {
@@ -231,6 +248,22 @@ function StudioContent({ params }) {
             const offer = await audiencePC.createOffer();
             await audiencePC.setLocalDescription(offer);
             socket.emit('broadcast-offer', { audienceSocketId, offer });
+
+            socket.on('broadcast-answer', async (answer) => {
+              await audiencePC.setRemoteDescription(new RTCSessionDescription(answer));
+            });
+
+            socket.on('broadcast-ice', async (candidate) => {
+              if (candidate) {
+                try {
+                  await audiencePC.addIceCandidate(new RTCIceCandidate(candidate));
+                } catch (e) {
+                  console.error(e);
+                }
+              }
+            });
+          } catch (err) {
+            console.error('Failed to broadcast stream to audience:', err);
           }
         });
 

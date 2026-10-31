@@ -8,7 +8,6 @@ import {
   Radio,
   ArrowLeft,
   QrCode,
-  Video,
   VideoOff,
   Mic,
   MicOff,
@@ -117,7 +116,8 @@ function StudioContent({ params }) {
         }
 
         const socket = io(process.env.NEXT_PUBLIC_API_URL.replace('/api', ''), {
-          transports: ['polling', 'websocket'],
+          transports: ['websocket', 'polling'],
+          reconnection: true,
         });
         socketRef.current = socket;
 
@@ -145,26 +145,30 @@ function StudioContent({ params }) {
           });
         });
 
-        // Handle Guest Offer & Stream Ingestion in Studio
+        // Handle Guest Offer & Two-Way Stream Ingestion
         socket.on('speaker-offer', async ({ speakerId, offer }) => {
           let pc = currentSpeakerPCs.get(speakerId);
           if (!pc) {
-            pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
+            pc = new RTCPeerConnection({
+              iceServers: [{ urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:stun1.l.google.com:19302' }],
+            });
             currentSpeakerPCs.set(speakerId, pc);
 
-            // 1. ATTACH HOST/STUDIO TRACKS TO SEND BACK TO THIS GUEST
-            if (remoteVideoRef.current && remoteVideoRef.current.srcObject) {
-              remoteVideoRef.current.srcObject.getTracks().forEach((track) => {
-                pc.addTrack(track, remoteVideoRef.current.srcObject);
+            // Attach Host stream tracks to send back to the guest
+            const hostStream = remoteVideoRef.current?.srcObject;
+            if (hostStream) {
+              hostStream.getTracks().forEach((track) => {
+                pc.addTrack(track, hostStream);
               });
             }
 
-            // 2. RECEIVE INCOMING GUEST TRACKS
             pc.ontrack = (event) => {
-              const videoEl = speakerVideoRefs.current[speakerId];
-              if (videoEl && event.streams[0]) {
-                videoEl.srcObject = event.streams[0];
-                videoEl.play().catch((e) => console.log('Studio guest video play error:', e));
+              if (event.streams && event.streams[0]) {
+                const videoEl = speakerVideoRefs.current[speakerId];
+                if (videoEl) {
+                  videoEl.srcObject = event.streams[0];
+                  videoEl.play().catch((e) => console.log('Studio guest video play error:', e));
+                }
               }
             };
 
@@ -187,13 +191,15 @@ function StudioContent({ params }) {
             try {
               await pc.addIceCandidate(new RTCIceCandidate(candidate));
             } catch (e) {
-              console.error('Error adding ICE candidate in studio:', e);
+              console.error(e);
             }
           }
         });
 
         // Host Phone Camera Connection
-        const hostPC = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
+        const hostPC = new RTCPeerConnection({
+          iceServers: [{ urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:stun1.l.google.com:19302' }],
+        });
         hostPCRef.current = hostPC;
 
         hostPC.ontrack = (event) => {
@@ -228,7 +234,9 @@ function StudioContent({ params }) {
         // Relay Studio Stream to Audience Request
         socket.on('request-broadcast-stream', async (audienceSocketId) => {
           try {
-            const audiencePC = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
+            const audiencePC = new RTCPeerConnection({
+              iceServers: [{ urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:stun1.l.google.com:19302' }],
+            });
             const combinedStream = new MediaStream();
 
             if (remoteVideoRef.current && remoteVideoRef.current.srcObject) {

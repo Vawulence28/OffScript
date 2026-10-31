@@ -11,7 +11,7 @@ function SpeakerJoinContent() {
 
   const [invitation, setInvitation] = useState(null);
   const [error, setError] = useState(!token ? 'No invitation token provided.' : '');
-  const [status, setStatus] = useState(!token ? 'ERROR' : 'VERIFYING'); // VERIFYING | LOBBY | WAITING | ADMITTED | REJECTED | ERROR
+  const [status, setStatus] = useState(!token ? 'ERROR' : 'VERIFYING');
   const [guestName, setGuestName] = useState('');
 
   const localVideoRef = useRef(null);
@@ -20,7 +20,6 @@ function SpeakerJoinContent() {
   const socketRef = useRef(null);
   const pcRef = useRef(null);
 
-  // 1. Verify invitation token asynchronously on mount
   useEffect(() => {
     if (!token) return;
 
@@ -48,7 +47,6 @@ function SpeakerJoinContent() {
     };
   }, [token]);
 
-  // 2. Check into the Waiting Room
   const handleEnterWaitingRoom = async () => {
     try {
       const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/join-waiting-room`, {
@@ -63,7 +61,8 @@ function SpeakerJoinContent() {
       setStatus('WAITING');
 
       const socket = io(process.env.NEXT_PUBLIC_API_URL.replace('/api', ''), {
-        transports: ['polling', 'websocket'],
+        transports: ['websocket', 'polling'],
+        reconnection: true,
       });
       socketRef.current = socket;
 
@@ -85,7 +84,6 @@ function SpeakerJoinContent() {
     }
   };
 
-  // 3. Establish 2-Way WebRTC Broadcast with Studio upon Admission
   const startBroadcastingToStudio = async (episodeId, speakerId) => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
@@ -101,16 +99,14 @@ function SpeakerJoinContent() {
 
       const socket = socketRef.current;
       const pc = new RTCPeerConnection({
-        iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
+        iceServers: [{ urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:stun1.l.google.com:19302' }],
       });
       pcRef.current = pc;
 
-      // Add local tracks to peer connection
       stream.getTracks().forEach((track) => pc.addTrack(track, stream));
 
-      // Receive incoming studio feed
       pc.ontrack = (event) => {
-        if (remoteStudioVideoRef.current && event.streams[0]) {
+        if (remoteStudioVideoRef.current && event.streams && event.streams[0]) {
           remoteStudioVideoRef.current.srcObject = event.streams[0];
           remoteStudioVideoRef.current.play().catch((e) => console.log('Remote studio video play error:', e));
         }
@@ -131,7 +127,7 @@ function SpeakerJoinContent() {
           try {
             await pc.addIceCandidate(new RTCIceCandidate(candidate));
           } catch (e) {
-            console.error('Error adding ICE candidate on guest portal:', e);
+            console.error(e);
           }
         }
       });

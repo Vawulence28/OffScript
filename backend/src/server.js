@@ -24,11 +24,10 @@ const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
     origin: process.env.CORS_ORIGIN || 'http://localhost:3000',
-    credentials: true
-  }
+    credentials: true,
+  },
 });
 
-// Expose io instance to express controllers for instant database triggers
 app.set('io', io);
 
 const PORT = process.env.PORT || 5000;
@@ -37,7 +36,7 @@ app.use(express.json());
 app.use(cookieParser());
 app.use(cors({
   origin: process.env.CORS_ORIGIN || 'http://localhost:3000',
-  credentials: true
+  credentials: true,
 }));
 
 app.use('/api/auth', authRoutes);
@@ -65,7 +64,7 @@ io.on('connection', (socket) => {
   // Host Phone Pairing Room
   socket.on('join-room', (room) => {
     socket.join(room);
-    console.log(`Socket ${socket.id} joined room: ${room}`);
+    console.log(`Socket ${socket.id} joined pairing room: ${room}`);
     socket.to(room).emit('peer-joined', socket.id);
   });
 

@@ -3,7 +3,7 @@
 import { useEffect, useState, useRef, use, Suspense } from 'react';
 import { useRouter } from 'next/navigation';
 import { io } from 'socket.io-client';
-import { Radio, MessageSquare, Send, Video, Clock } from 'lucide-react';
+import { Radio, MessageSquare, Send, Clock } from 'lucide-react';
 
 function PublicWatchContent({ params }) {
   const unwrappedParams = use(params);
@@ -56,7 +56,8 @@ function PublicWatchContent({ params }) {
     if (!episode?.id) return;
 
     const socket = io(process.env.NEXT_PUBLIC_API_URL.replace('/api', ''), {
-      transports: ['polling', 'websocket'],
+      transports: ['websocket', 'polling'],
+      reconnection: true,
     });
     socketRef.current = socket;
 
@@ -70,12 +71,15 @@ function PublicWatchContent({ params }) {
       });
     });
 
-    const pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
+    const pc = new RTCPeerConnection({
+      iceServers: [{ urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:stun1.l.google.com:19302' }],
+    });
     audiencePCRef.current = pc;
 
     pc.ontrack = (event) => {
-      if (publicVideoRef.current && event.streams[0]) {
+      if (publicVideoRef.current && event.streams && event.streams[0]) {
         publicVideoRef.current.srcObject = event.streams[0];
+        publicVideoRef.current.play().catch((e) => console.log('Audience video play error:', e));
       }
     };
 

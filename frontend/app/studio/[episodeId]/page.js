@@ -152,7 +152,14 @@ function StudioContent({ params }) {
             pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
             currentSpeakerPCs.set(speakerId, pc);
 
-            // Bind incoming guest track directly to the corresponding video reference
+            // 1. ATTACH HOST/STUDIO TRACKS TO SEND BACK TO THIS GUEST
+            if (remoteVideoRef.current && remoteVideoRef.current.srcObject) {
+              remoteVideoRef.current.srcObject.getTracks().forEach((track) => {
+                pc.addTrack(track, remoteVideoRef.current.srcObject);
+              });
+            }
+
+            // 2. RECEIVE INCOMING GUEST TRACKS
             pc.ontrack = (event) => {
               const videoEl = speakerVideoRefs.current[speakerId];
               if (videoEl && event.streams[0]) {

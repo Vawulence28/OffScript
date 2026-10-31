@@ -21,6 +21,19 @@ import {
   XCircle,
 } from 'lucide-react';
 
+// Safe play helper to prevent AbortError when video sources change rapidly
+const safePlayVideo = (videoElement) => {
+  if (!videoElement) return;
+  const playPromise = videoElement.play();
+  if (playPromise !== undefined) {
+    playPromise.catch((error) => {
+      if (error.name !== 'AbortError') {
+        console.error('Video playback error:', error);
+      }
+    });
+  }
+};
+
 function StudioContent({ params }) {
   const unwrappedParams = use(params);
   const episodeId = unwrappedParams.episodeId;
@@ -145,7 +158,6 @@ function StudioContent({ params }) {
           });
         });
 
-        // Handle Guest Offer & Two-Way Stream Ingestion
         socket.on('speaker-offer', async ({ speakerId, offer }) => {
           let pc = currentSpeakerPCs.get(speakerId);
           if (!pc) {
@@ -154,7 +166,6 @@ function StudioContent({ params }) {
             });
             currentSpeakerPCs.set(speakerId, pc);
 
-            // Attach Host stream tracks to send back to the guest
             const hostStream = remoteVideoRef.current?.srcObject;
             if (hostStream) {
               hostStream.getTracks().forEach((track) => {
@@ -167,7 +178,7 @@ function StudioContent({ params }) {
                 const videoEl = speakerVideoRefs.current[speakerId];
                 if (videoEl) {
                   videoEl.srcObject = event.streams[0];
-                  videoEl.play().catch((e) => console.log('Studio guest video play error:', e));
+                  safePlayVideo(videoEl);
                 }
               }
             };
@@ -196,7 +207,6 @@ function StudioContent({ params }) {
           }
         });
 
-        // Host Phone Camera Connection
         const hostPC = new RTCPeerConnection({
           iceServers: [{ urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:stun1.l.google.com:19302' }],
         });
@@ -205,7 +215,7 @@ function StudioContent({ params }) {
         hostPC.ontrack = (event) => {
           if (remoteVideoRef.current && event.streams[0] && isMounted) {
             remoteVideoRef.current.srcObject = event.streams[0];
-            remoteVideoRef.current.play().catch((e) => console.log('Host video play error:', e));
+            safePlayVideo(remoteVideoRef.current);
             setCameraConnected(true);
           }
         };
@@ -231,7 +241,6 @@ function StudioContent({ params }) {
           }
         });
 
-        // Relay Studio Stream to Audience Request
         socket.on('request-broadcast-stream', async (audienceSocketId) => {
           try {
             const audiencePC = new RTCPeerConnection({

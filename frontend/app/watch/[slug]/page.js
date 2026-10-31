@@ -18,13 +18,14 @@ function PublicWatchContent({ params }) {
   const [error, setError] = useState('');
 
   const socketRef = useRef(null);
+  const publicVideoRef = useRef(null);
 
   useEffect(() => {
     if (!slug) return;
 
     let isMounted = true;
 
-    // Fetch public episode details using public route
+    // Fetch public episode details
     fetch(`${process.env.NEXT_PUBLIC_API_URL}/public/episodes/${slug}`)
       .then(async (res) => {
         const data = await res.json();
@@ -36,7 +37,7 @@ function PublicWatchContent({ params }) {
           setEpisode(found);
         }
 
-        // Fetch initial audience chat comments
+        // Fetch initial audience chat comments (Public endpoint)
         return fetch(`${process.env.NEXT_PUBLIC_API_URL}/episodes/${found.id}/comments`);
       })
       .then(async (res) => {
@@ -57,11 +58,13 @@ function PublicWatchContent({ params }) {
     };
   }, [slug]);
 
-  // Connect socket for real-time live audience chat
+  // Connect socket for real-time live audience chat & broadcast sync
   useEffect(() => {
     if (!episode?.id) return;
 
-    const socket = io(process.env.NEXT_PUBLIC_API_URL.replace('/api', ''));
+    const socket = io(process.env.NEXT_PUBLIC_API_URL.replace('/api', ''), {
+      transports: ['polling', 'websocket'],
+    });
     socketRef.current = socket;
 
     socket.emit('join-audience', episode.id);
@@ -80,6 +83,7 @@ function PublicWatchContent({ params }) {
     if (!newComment.trim() || !displayName.trim() || !episode?.id) return;
 
     try {
+      // Public comment submission endpoint without requiring bearer tokens
       const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/episodes/${episode.id}/comments`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -152,10 +156,13 @@ function PublicWatchContent({ params }) {
         <div className="lg:col-span-2 space-y-6">
           <div className="relative aspect-video bg-zinc-900 border border-zinc-800 rounded-2xl overflow-hidden flex items-center justify-center shadow-2xl">
             {episode.status === 'PUBLISHED' ? (
-              <div className="w-full h-full flex flex-col items-center justify-center bg-zinc-950 text-center p-6">
-                <Video className="w-12 h-12 text-rose-500 mb-3 animate-pulse" />
-                <h3 className="text-white font-bold text-lg mb-1">Live Stream In Progress</h3>
-                <p className="text-xs text-zinc-400 max-w-md">Connecting to studio relay broadcast media stream...</p>
+              <div className="w-full h-full flex flex-col items-center justify-center bg-zinc-950 text-center relative">
+                <video ref={publicVideoRef} autoPlay playsInline muted={false} className="w-full h-full object-cover" />
+                <div className="absolute inset-0 flex flex-col items-center justify-center bg-zinc-950/60 pointer-events-none">
+                  <Video className="w-12 h-12 text-rose-500 mb-3 animate-pulse" />
+                  <h3 className="text-white font-bold text-lg mb-1">Live Stream Active</h3>
+                  <p className="text-xs text-zinc-400 max-w-md">Broadcasting live from OffScript Studio relay...</p>
+                </div>
               </div>
             ) : (
               <div className="w-full h-full flex flex-col items-center justify-center bg-zinc-950 text-center p-6 space-y-3">

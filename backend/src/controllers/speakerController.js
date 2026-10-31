@@ -12,14 +12,13 @@ const createInvitation = async (req, res, next) => {
       return res.status(400).json({ error: 'Speaker name and email are required.' });
     }
 
-    // Verify episode belongs to host
     const epCheck = await db.query('SELECT id FROM ofs_episodes WHERE id = $1 AND host_id = $2', [episode_id, host_id]);
     if (epCheck.rows.length === 0) {
       return res.status(404).json({ error: 'Episode not found or unauthorized.' });
     }
 
     const token = crypto.randomBytes(32).toString('hex');
-    const expiresAt = new Date(Date.now() + 48 * 60 * 60 * 1000); // 48 hours expiry
+    const expiresAt = new Date(Date.now() + 48 * 60 * 60 * 1000);
 
     const result = await db.query(
       `INSERT INTO ofs_invitations (episode_id, host_id, speaker_name, speaker_email, token, status, expires_at)
@@ -83,7 +82,7 @@ const verifyInvitationToken = async (req, res, next) => {
     const result = await db.query(
       `SELECT i.*, e.title as episode_title, e.status as episode_status
        FROM ofs_invitations i
-       JOIN OFS_episodes e ON i.episode_id = e.id
+       JOIN ofs_episodes e ON i.episode_id = e.id
        WHERE i.token = $1 AND i.status NOT IN ('REVOKED', 'EXPIRED') AND i.expires_at > CURRENT_TIMESTAMP`,
       [token]
     );
@@ -114,7 +113,6 @@ const joinWaitingRoom = async (req, res, next) => {
 
     const invitation = invResult.rows[0];
 
-    // Check participant limit (8 total: 1 host + 7 admitted speakers)
     const admittedCount = await db.query(
       `SELECT COUNT(*) FROM ofs_invitations WHERE episode_id = $1 AND status = 'ADMITTED'`,
       [invitation.episode_id]
@@ -129,6 +127,11 @@ const joinWaitingRoom = async (req, res, next) => {
       [invitation.id]
     );
 
+    const reqIo = req.app.get('io');
+    if (reqIo) {
+      reqIo.to(invitation.episode_id.toString()).emit('speaker-status-changed', updated.rows[0]);
+    }
+
     return res.json({ message: 'Entered waiting room successfully.', invitation: updated.rows[0] });
   } catch (err) {
     next(err);
@@ -141,7 +144,6 @@ const admitSpeaker = async (req, res, next) => {
     const { id } = req.params;
     const host_id = req.user.id;
 
-    // Verify host and participant capacity
     const inv = await db.query(`SELECT * FROM ofs_invitations WHERE id = $1 AND host_id = $2`, [id, host_id]);
     if (inv.rows.length === 0) {
       return res.status(404).json({ error: 'Invitation not found or unauthorized.' });
@@ -161,7 +163,13 @@ const admitSpeaker = async (req, res, next) => {
       [id, host_id]
     );
 
-    return res.json({ message: 'Speaker admitted successfully.', invitation: result.rows[0] });
+    const updatedInv = result.rows[0];
+    const reqIo = req.app.get('io');
+    if (reqIo) {
+      reqIo.to(updatedInv.episode_id.toString()).emit('speaker-status-changed', updatedInv);
+    }
+
+    return res.json({ message: 'Speaker admitted successfully.', invitation: updatedInv });
   } catch (err) {
     next(err);
   }
@@ -182,7 +190,13 @@ const removeSpeaker = async (req, res, next) => {
       return res.status(404).json({ error: 'Invitation not found or unauthorized.' });
     }
 
-    return res.json({ message: 'Speaker removed from session.', invitation: result.rows[0] });
+    const updatedInv = result.rows[0];
+    const reqIo = req.app.get('io');
+    if (reqIo) {
+      reqIo.to(updatedInv.episode_id.toString()).emit('speaker-status-changed', updatedInv);
+    }
+
+    return res.json({ message: 'Speaker removed from session.', invitation: updatedInv });
   } catch (err) {
     next(err);
   }

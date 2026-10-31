@@ -3,7 +3,6 @@ const http = require('http');
 const { Server } = require('socket.io');
 const cors = require('cors');
 const cookieParser = require('cookie-parser');
-const rateLimit = require('express-rate-limit');
 require('dotenv').config();
 
 const authRoutes = require('./routes/authRoutes');
@@ -28,6 +27,9 @@ const io = new Server(server, {
     credentials: true
   }
 });
+
+// Expose io instance to express controllers
+app.set('io', io);
 
 const PORT = process.env.PORT || 5000;
 
@@ -64,6 +66,10 @@ io.on('connection', (socket) => {
     socket.join(room);
     console.log(`Socket ${socket.id} joined room: ${room}`);
     socket.to(room).emit('peer-joined', socket.id);
+  });
+
+  socket.on('join-audience', (episodeId) => {
+    socket.join(episodeId.toString());
   });
 
   socket.on('offer', ({ room, offer }) => {

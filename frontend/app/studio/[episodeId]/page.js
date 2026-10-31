@@ -36,20 +36,18 @@ function StudioContent({ params }) {
   const [loadingBroadcast, setLoadingBroadcast] = useState(false);
   const [error, setError] = useState('');
 
-  // Layout & Spotlight State
-  const [layoutMode, setLayoutMode] = useState('grid'); // 'grid' | 'spotlight'
-  const [spotlightTarget, setSpotlightTarget] = useState('phone'); // 'phone' or speakerId
+  const [layoutMode, setLayoutMode] = useState('grid');
+  const [spotlightTarget, setSpotlightTarget] = useState('phone');
   const [laptopMicMuted, setLaptopMicMuted] = useState(true);
 
-  // Graphics & Lower Thirds State
   const [lowerThirdText, setLowerThirdText] = useState('');
   const [lowerThirdTitle, setLowerThirdTitle] = useState('');
   const [lowerThirdActive, setLowerThirdActive] = useState(false);
   const [lowerThirdTarget, setLowerThirdTarget] = useState('all');
 
-  const remoteVideoRef = useRef(null); // Host Phone Camera
-  const speakerVideoRefs = useRef({}); // Map of speakerId -> HTMLVideoElement
-  const speakerPCsRef = useRef(new Map()); // Map of speakerId -> RTCPeerConnection
+  const remoteVideoRef = useRef(null);
+  const speakerVideoRefs = useRef({});
+  const speakerPCsRef = useRef(new Map());
 
   const socketRef = useRef(null);
   const hostPCRef = useRef(null);
@@ -58,8 +56,6 @@ function StudioContent({ params }) {
     if (!episodeId) return;
 
     let isMounted = true;
-
-    // 1. Capture ref references locally for safe cleanup
     const currentSpeakerPCs = speakerPCsRef.current;
     const currentHostPC = hostPCRef.current;
 
@@ -194,7 +190,7 @@ function StudioContent({ params }) {
             try {
               await pc.addIceCandidate(new RTCIceCandidate(candidate));
             } catch (e) {
-              console.error('Error adding speaker ICE candidate:', e);
+              console.error(e);
             }
           }
         });
@@ -232,6 +228,22 @@ function StudioContent({ params }) {
           }
         });
 
+        socket.on('broadcast-answer', async (answer) => {
+          if (hostPCRef.current) {
+            await hostPCRef.current.setRemoteDescription(new RTCSessionDescription(answer));
+          }
+        });
+
+        socket.on('broadcast-ice', async (candidate) => {
+          if (hostPCRef.current && candidate) {
+            try {
+              await hostPCRef.current.addIceCandidate(new RTCIceCandidate(candidate));
+            } catch (e) {
+              console.error(e);
+            }
+          }
+        });
+
         await fetchSpeakers();
         await fetchBroadcastStatus();
       } catch (err) {
@@ -246,12 +258,8 @@ function StudioContent({ params }) {
     };
 
     initStudio();
+    const pollInterval = setInterval(fetchSpeakers, 4000);
 
-    const pollInterval = setInterval(() => {
-      fetchSpeakers();
-    }, 4000);
-
-    // 2. Safe Cleanup Function using captured local variables
     return () => {
       isMounted = false;
       clearInterval(pollInterval);
@@ -265,9 +273,7 @@ function StudioContent({ params }) {
     const token = localStorage.getItem('token');
     if (!token) return;
 
-    const endpoint = action === 'ADMIT'
-      ? `/invitations/${invitationId}/admit`
-      : `/invitations/${invitationId}/remove`;
+    const endpoint = action === 'ADMIT' ? `/invitations/${invitationId}/admit` : `/invitations/${invitationId}/remove`;
 
     try {
       const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}${endpoint}`, {
@@ -281,9 +287,7 @@ function StudioContent({ params }) {
       const data = await res.json();
       if (res.ok && data.invitation) {
         const updated = data.invitation;
-        setAllInvitations((prev) =>
-          prev.map((i) => (i.id === updated.id ? updated : i))
-        );
+        setAllInvitations((prev) => prev.map((i) => (i.id === updated.id ? updated : i)));
         setAdmittedSpeakers((prev) =>
           updated.status === 'ADMITTED'
             ? [...prev.filter((i) => i.id !== updated.id), updated]
@@ -291,7 +295,7 @@ function StudioContent({ params }) {
         );
       }
     } catch (e) {
-      console.error('Admission error:', e);
+      console.error(e);
     }
   };
 
@@ -355,7 +359,6 @@ function StudioContent({ params }) {
 
   return (
     <div className="min-h-screen bg-zinc-950 text-zinc-100 flex flex-col font-sans">
-      {/* Top Navbar */}
       <header className="border-b border-zinc-800 bg-zinc-900/50 backdrop-blur-md px-6 py-4 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <button onClick={() => router.push('/episodes')} className="text-zinc-400 hover:text-white transition-colors">
@@ -373,7 +376,6 @@ function StudioContent({ params }) {
         </div>
 
         <div className="flex items-center gap-3">
-          {/* Layout Mode Switcher */}
           <div className="flex items-center bg-zinc-900 border border-zinc-800 rounded-lg p-1 gap-1">
             <button
               onClick={() => setLayoutMode('grid')}
@@ -394,7 +396,6 @@ function StudioContent({ params }) {
             </button>
           </div>
 
-          {/* Laptop Audio Echo Mute Toggle */}
           <button
             onClick={() => setLaptopMicMuted(!laptopMicMuted)}
             className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium border ${
@@ -402,7 +403,7 @@ function StudioContent({ params }) {
             }`}
           >
             {laptopMicMuted ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
-            <span>{laptopMicMuted ? 'Laptop Mic Muted (No Echo)' : 'Laptop Mic Active'}</span>
+            <span>{laptopMicMuted ? 'Laptop Mic Muted' : 'Laptop Mic Active'}</span>
           </button>
 
           <button
@@ -411,9 +412,6 @@ function StudioContent({ params }) {
           >
             <Users className="w-4 h-4 text-rose-500" />
             <span>Manage Speakers ({admittedSpeakers.length})</span>
-            {allInvitations.some((i) => i.status === 'WAITING') && (
-              <span className="absolute -top-1 -right-1 w-3 h-3 bg-rose-500 rounded-full animate-ping" />
-            )}
           </button>
 
           <button
@@ -429,22 +427,12 @@ function StudioContent({ params }) {
         </div>
       </header>
 
-      {/* Main Studio Display */}
       <main className="flex-1 grid grid-cols-1 lg:grid-cols-4 p-8 gap-8 max-w-7xl mx-auto w-full">
-        {/* Stage Video Area */}
         <div className="lg:col-span-3 flex flex-col gap-6">
           <div className={`grid gap-4 ${layoutMode === 'grid' && admittedSpeakers.length > 0 ? 'grid-cols-2' : 'grid-cols-1'}`}>
-            
-            {/* Host Phone Camera Tile */}
             {(layoutMode === 'grid' || (layoutMode === 'spotlight' && spotlightTarget === 'phone')) && (
               <div className="relative aspect-video bg-zinc-900 border border-zinc-800 rounded-2xl overflow-hidden shadow-2xl flex items-center justify-center">
-                <video
-                  ref={remoteVideoRef}
-                  autoPlay
-                  playsInline
-                  muted={laptopMicMuted}
-                  className="w-full h-full object-cover"
-                />
+                <video ref={remoteVideoRef} autoPlay playsInline muted={laptopMicMuted} className="w-full h-full object-cover" />
                 {!cameraConnected && (
                   <div className="absolute inset-0 flex flex-col items-center justify-center bg-zinc-950/80 backdrop-blur-sm p-6 text-center">
                     <VideoOff className="w-12 h-12 text-zinc-600 mb-3" />
@@ -477,7 +465,6 @@ function StudioContent({ params }) {
               </div>
             )}
 
-            {/* Live Admitted Guest Video Tiles */}
             {admittedSpeakers.map((sp) => {
               const isVisible = layoutMode === 'grid' || (layoutMode === 'spotlight' && spotlightTarget === sp.id);
               if (!isVisible) return null;
@@ -521,7 +508,7 @@ function StudioContent({ params }) {
           </div>
         </div>
 
-        {/* Sidebar: Controls & Lower Thirds Drawer */}
+        {/* Sidebar */}
         <div className="bg-zinc-900/60 border border-zinc-800 rounded-2xl p-6 flex flex-col justify-between space-y-6">
           <div className="space-y-6">
             <div className="flex items-center gap-2 text-white font-semibold pb-4 border-b border-zinc-800">
@@ -577,7 +564,6 @@ function StudioContent({ params }) {
               </button>
             </div>
 
-            {/* QR Code Section */}
             <div className="pt-4 border-t border-zinc-800">
               <div className="flex items-center gap-2 text-white font-semibold mb-3 text-xs">
                 <QrCode className="w-4 h-4 text-rose-500" />
@@ -595,7 +581,6 @@ function StudioContent({ params }) {
             </div>
           </div>
 
-          {/* Dynamic Speaker Management Drawer */}
           {showSpeakerDrawer && (
             <div className="fixed inset-y-0 right-0 w-80 bg-zinc-950 border-l border-zinc-800 p-6 z-50 flex flex-col shadow-2xl">
               <div className="flex items-center justify-between pb-4 border-b border-zinc-800 mb-4">
@@ -631,9 +616,6 @@ function StudioContent({ params }) {
                     )}
                   </div>
                 ))}
-                {allInvitations.length === 0 && (
-                  <p className="text-xs text-zinc-500 text-center py-6">No speaker invitations created yet.</p>
-                )}
               </div>
             </div>
           )}

@@ -28,7 +28,6 @@ const io = new Server(server, {
   }
 });
 
-// Expose io instance to express controllers
 app.set('io', io);
 
 const PORT = process.env.PORT || 5000;
@@ -60,11 +59,10 @@ app.use(errorHandler);
 
 // WebRTC Signaling via Socket.io
 io.on('connection', (socket) => {
-  console.log('Client connected to WebRTC signaling:', socket.id);
+  console.log('Client connected:', socket.id);
 
   socket.on('join-room', (room) => {
     socket.join(room);
-    console.log(`Socket ${socket.id} joined room: ${room}`);
     socket.to(room).emit('peer-joined', socket.id);
   });
 
@@ -84,16 +82,34 @@ io.on('connection', (socket) => {
     socket.to(room).emit('ice-candidate', candidate);
   });
 
+  // Guest Speaker Signaling
+  socket.on('speaker-offer', ({ speakerId, offer, episodeId }) => {
+    socket.to(episodeId.toString()).emit('speaker-offer', { speakerId, offer });
+  });
+
+  socket.on('speaker-answer', ({ speakerId, answer, episodeId }) => {
+    socket.to(episodeId.toString()).emit('speaker-answer', { speakerId, answer });
+  });
+
+  socket.on('speaker-ice-candidate', ({ speakerId, candidate, episodeId }) => {
+    socket.to(episodeId.toString()).emit('speaker-ice-candidate', { speakerId, candidate });
+  });
+
+  // Public Audience Stream Relay Signaling
+  socket.on('broadcast-answer', ({ episodeId, answer }) => {
+    socket.to(episodeId.toString()).emit('broadcast-answer', answer);
+  });
+
+  socket.on('broadcast-ice', ({ episodeId, candidate }) => {
+    socket.to(episodeId.toString()).emit('broadcast-ice', candidate);
+  });
+
   socket.on('disconnect', () => {
     console.log('Client disconnected:', socket.id);
   });
 
   socket.on('send-comment', (commentData) => {
     io.to(commentData.episode_id.toString()).emit('new-comment', commentData);
-  });
-
-  socket.on('feature-comment', (data) => {
-    io.to(data.episode_id.toString()).emit('featured-comment', data);
   });
 });
 

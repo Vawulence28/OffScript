@@ -25,19 +25,19 @@ function PublicWatchContent({ params }) {
 
     let isMounted = true;
 
-    // Fetch public episode details
+    // Fetch public episode details by slug
     fetch(`${process.env.NEXT_PUBLIC_API_URL}/public/episodes/${slug}`)
       .then(async (res) => {
         const data = await res.json();
-        if (!res.ok) throw new Error(data.error || 'Failed to load episode.');
+        if (!res.ok) throw new Error(data.error || 'Failed to load live session.');
         const found = data.episode;
-        if (!found) throw new Error('Episode not found.');
+        if (!found) throw new Error('Live session not found.');
         
         if (isMounted) {
           setEpisode(found);
         }
 
-        // Fetch initial audience chat comments (Public endpoint)
+        // Fetch initial audience comments
         return fetch(`${process.env.NEXT_PUBLIC_API_URL}/episodes/${found.id}/comments`);
       })
       .then(async (res) => {
@@ -58,7 +58,7 @@ function PublicWatchContent({ params }) {
     };
   }, [slug]);
 
-  // Connect socket for real-time live audience chat & broadcast sync
+  // Connect socket for real-time audience chat & stream relay
   useEffect(() => {
     if (!episode?.id) return;
 
@@ -70,7 +70,10 @@ function PublicWatchContent({ params }) {
     socket.emit('join-audience', episode.id);
 
     socket.on('new-comment', (comment) => {
-      setComments((prev) => [...prev, comment]);
+      setComments((prev) => {
+        if (prev.some((c) => c.id === comment.id)) return prev;
+        return [...prev, comment];
+      });
     });
 
     return () => {
@@ -83,7 +86,6 @@ function PublicWatchContent({ params }) {
     if (!newComment.trim() || !displayName.trim() || !episode?.id) return;
 
     try {
-      // Public comment submission endpoint without requiring bearer tokens
       const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/episodes/${episode.id}/comments`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -152,7 +154,7 @@ function PublicWatchContent({ params }) {
 
       {/* Main Layout */}
       <main className="flex-1 max-w-7xl w-full mx-auto p-6 grid grid-cols-1 lg:grid-cols-3 gap-8">
-        {/* Left Column: Video / Player Container */}
+        {/* Left Column: Video Player */}
         <div className="lg:col-span-2 space-y-6">
           <div className="relative aspect-video bg-zinc-900 border border-zinc-800 rounded-2xl overflow-hidden flex items-center justify-center shadow-2xl">
             {episode.status === 'PUBLISHED' ? (
@@ -232,7 +234,7 @@ function PublicWatchContent({ params }) {
                 type="text"
                 required
                 maxLength={500}
-                placeholder="Share your thought or question (max 500 chars)..."
+                placeholder="Share your thought or question..."
                 value={newComment}
                 onChange={(e) => setNewComment(e.target.value)}
                 className="flex-1 px-3 py-2 bg-zinc-950 border border-zinc-800 rounded-lg text-xs text-zinc-100 focus:outline-none focus:border-rose-500"

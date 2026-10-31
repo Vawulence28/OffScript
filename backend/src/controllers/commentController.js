@@ -54,7 +54,15 @@ const postComment = async (req, res, next) => {
       [episode_id, display_name.trim(), message.trim()]
     );
 
-    return res.status(201).json({ comment: result.rows[0] });
+    const comment = result.rows[0];
+
+    // Broadcast comment via socket if io is available
+    const reqIo = req.app.get('io');
+    if (reqIo) {
+      reqIo.to(episode_id.toString()).emit('new-comment', comment);
+    }
+
+    return res.status(201).json({ comment });
   } catch (err) {
     next(err);
   }

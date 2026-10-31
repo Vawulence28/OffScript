@@ -61,6 +61,7 @@ function PublicWatchContent({ params }) {
     socketRef.current = socket;
 
     socket.emit('join-audience', episode.id);
+    socket.emit('request-broadcast-stream', episode.id);
 
     socket.on('new-comment', (comment) => {
       setComments((prev) => {
@@ -69,9 +70,7 @@ function PublicWatchContent({ params }) {
       });
     });
 
-    const pc = new RTCPeerConnection({
-      iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
-    });
+    const pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
     audiencePCRef.current = pc;
 
     pc.ontrack = (event) => {
@@ -139,7 +138,7 @@ function PublicWatchContent({ params }) {
       <div className="min-h-screen bg-zinc-950 flex flex-col items-center justify-center p-6 text-center text-zinc-400">
         <Radio className="w-12 h-12 text-rose-500 mb-4 animate-pulse" />
         <h2 className="text-xl font-bold text-white mb-2">Session Not Found</h2>
-        <p className="text-xs text-zinc-500 max-w-sm mb-6">{error || 'This live broadcast session is unavailable.'}</p>
+        <p className="text-xs text-zinc-500 max-w-sm mb-6">{error || 'This session is unavailable.'}</p>
         <button onClick={() => router.push('/')} className="px-6 py-2.5 bg-rose-600 hover:bg-rose-500 text-white rounded-xl text-xs font-semibold">
           Return Home
         </button>
@@ -151,7 +150,7 @@ function PublicWatchContent({ params }) {
     <div className="min-h-screen bg-zinc-950 text-zinc-100 flex flex-col font-sans">
       <header className="border-b border-zinc-800 bg-zinc-950/80 backdrop-blur-md px-6 py-4 flex items-center justify-between">
         <div className="flex items-center gap-3 cursor-pointer" onClick={() => router.push('/')}>
-          <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-rose-600 to-rose-400 border border-rose-500/30 flex items-center justify-center text-white">
+          <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-rose-600 to-rose-400 flex items-center justify-center text-white">
             <Radio className="w-5 h-5" />
           </div>
           <div>
@@ -161,7 +160,7 @@ function PublicWatchContent({ params }) {
         </div>
         <div className="flex items-center gap-2 px-3 py-1 rounded-full text-xs font-medium bg-rose-500/10 text-rose-400 border border-rose-500/20">
           <span className="w-2 h-2 rounded-full bg-rose-500 animate-ping" />
-          <span>{episode.status === 'PUBLISHED' ? 'LIVE NOW' : 'SCHEDULED SESSION'}</span>
+          <span>{episode.status === 'PUBLISHED' ? 'LIVE NOW' : 'SCHEDULED'}</span>
         </div>
       </header>
 

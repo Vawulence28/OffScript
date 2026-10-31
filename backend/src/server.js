@@ -28,6 +28,7 @@ const io = new Server(server, {
   }
 });
 
+// Expose io instance to express controllers for instant database triggers
 app.set('io', io);
 
 const PORT = process.env.PORT || 5000;
@@ -57,19 +58,25 @@ app.get('/health', (req, res) => {
 
 app.use(errorHandler);
 
-// WebRTC Signaling via Socket.io
+// WebRTC & Broadcast Signaling via Socket.io
 io.on('connection', (socket) => {
-  console.log('Client connected:', socket.id);
+  console.log('Client connected to WebRTC signaling:', socket.id);
 
+  // Host Phone Pairing Room
   socket.on('join-room', (room) => {
     socket.join(room);
+    console.log(`Socket ${socket.id} joined room: ${room}`);
     socket.to(room).emit('peer-joined', socket.id);
   });
 
+  // Episode Room for Speakers & Audience
   socket.on('join-audience', (episodeId) => {
-    socket.join(episodeId.toString());
+    const roomId = episodeId.toString();
+    socket.join(roomId);
+    console.log(`Socket ${socket.id} joined episode room: ${roomId}`);
   });
 
+  // Core P2P Host Signals
   socket.on('offer', ({ room, offer }) => {
     socket.to(room).emit('offer', offer);
   });
@@ -82,7 +89,7 @@ io.on('connection', (socket) => {
     socket.to(room).emit('ice-candidate', candidate);
   });
 
-  // Guest Speaker Signaling
+  // Guest Speaker Multi-Peer WebRTC Signaling
   socket.on('speaker-offer', ({ speakerId, offer, episodeId }) => {
     socket.to(episodeId.toString()).emit('speaker-offer', { speakerId, offer });
   });
@@ -91,25 +98,42 @@ io.on('connection', (socket) => {
     socket.to(episodeId.toString()).emit('speaker-answer', { speakerId, answer });
   });
 
-  socket.on('speaker-ice-candidate', ({ speakerId, candidate, episodeId }) => {
-    socket.to(episodeId.toString()).emit('speaker-ice-candidate', { speakerId, candidate });
+  socket.on('speaker-ice-candidate', ({ speakerId, candidate, episodeId, target }) => {
+    if (target === 'studio') {
+      socket.to(episodeId.toString()).emit('speaker-ice-candidate', { speakerId, candidate });
+    } else {
+      socket.to(speakerId.toString()).emit('speaker-ice-candidate', { candidate });
+    }
   });
 
   // Public Audience Stream Relay Signaling
+  socket.on('request-broadcast-stream', (episodeId) => {
+    socket.to(episodeId.toString()).emit('request-broadcast-stream', socket.id);
+  });
+
+  socket.on('broadcast-offer', ({ audienceSocketId, offer }) => {
+    io.to(audienceSocketId).emit('broadcast-offer', offer);
+  });
+
   socket.on('broadcast-answer', ({ episodeId, answer }) => {
     socket.to(episodeId.toString()).emit('broadcast-answer', answer);
   });
 
-  socket.on('broadcast-ice', ({ episodeId, candidate }) => {
-    socket.to(episodeId.toString()).emit('broadcast-ice', candidate);
+  socket.on('broadcast-ice', ({ episodeId, candidate, audienceSocketId }) => {
+    if (audienceSocketId) {
+      io.to(audienceSocketId).emit('broadcast-ice', candidate);
+    } else {
+      socket.to(episodeId.toString()).emit('broadcast-ice', candidate);
+    }
+  });
+
+  // Real-time Audience Chat Signals
+  socket.on('send-comment', (commentData) => {
+    io.to(commentData.episode_id.toString()).emit('new-comment', commentData);
   });
 
   socket.on('disconnect', () => {
     console.log('Client disconnected:', socket.id);
-  });
-
-  socket.on('send-comment', (commentData) => {
-    io.to(commentData.episode_id.toString()).emit('new-comment', commentData);
   });
 });
 

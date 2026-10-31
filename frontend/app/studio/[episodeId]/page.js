@@ -65,10 +65,7 @@ function StudioContent({ params }) {
 
       try {
         const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/episodes/${episodeId}/invitations`, {
-          headers: {
-            Authorization: `Bearer ${token}`,
-            'Content-Type': 'application/json',
-          },
+          headers: { Authorization: `Bearer ${token}` },
         });
         const data = await res.json();
         if (res.ok && isMounted) {
@@ -87,10 +84,7 @@ function StudioContent({ params }) {
 
       try {
         const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/media/status/${episodeId}`, {
-          headers: {
-            Authorization: `Bearer ${token}`,
-            'Content-Type': 'application/json',
-          },
+          headers: { Authorization: `Bearer ${token}` },
         });
         const data = await res.json();
         if (res.ok && data.session && data.session.status === 'LIVE' && isMounted) {
@@ -111,10 +105,7 @@ function StudioContent({ params }) {
       try {
         const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/pairing`, {
           method: 'POST',
-          headers: {
-            Authorization: `Bearer ${token}`,
-            'Content-Type': 'application/json',
-          },
+          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
           body: JSON.stringify({ episode_id: episodeId }),
         });
         const data = await res.json();
@@ -139,9 +130,7 @@ function StudioContent({ params }) {
 
         socket.on('speaker-status-changed', (updatedInv) => {
           if (!isMounted) return;
-          setAllInvitations((prev) =>
-            prev.map((i) => (i.id === updatedInv.id ? updatedInv : i))
-          );
+          setAllInvitations((prev) => prev.map((i) => (i.id === updatedInv.id ? updatedInv : i)));
           setAdmittedSpeakers((prev) => {
             const exists = prev.some((i) => i.id === updatedInv.id);
             if (updatedInv.status === 'ADMITTED') {
@@ -156,12 +145,11 @@ function StudioContent({ params }) {
           });
         });
 
+        // Handle Guest Offer & Stream Ingestion
         socket.on('speaker-offer', async ({ speakerId, offer }) => {
           let pc = currentSpeakerPCs.get(speakerId);
           if (!pc) {
-            pc = new RTCPeerConnection({
-              iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
-            });
+            pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
             currentSpeakerPCs.set(speakerId, pc);
 
             pc.ontrack = (event) => {
@@ -173,7 +161,7 @@ function StudioContent({ params }) {
 
             pc.onicecandidate = (event) => {
               if (event.candidate) {
-                socket.emit('speaker-ice-candidate', { speakerId, candidate: event.candidate, episodeId });
+                socket.emit('speaker-ice-candidate', { speakerId, candidate: event.candidate, episodeId, target: 'studio' });
               }
             };
           }
@@ -195,9 +183,8 @@ function StudioContent({ params }) {
           }
         });
 
-        const hostPC = new RTCPeerConnection({
-          iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
-        });
+        // Host Phone Camera Connection
+        const hostPC = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
         hostPCRef.current = hostPC;
 
         hostPC.ontrack = (event) => {
@@ -228,32 +215,29 @@ function StudioContent({ params }) {
           }
         });
 
-        socket.on('broadcast-answer', async (answer) => {
-          if (hostPCRef.current) {
-            await hostPCRef.current.setRemoteDescription(new RTCSessionDescription(answer));
-          }
-        });
+        // Relay Studio Stream to Audience Request
+        socket.on('request-broadcast-stream', async (audienceSocketId) => {
+          if (remoteVideoRef.current && remoteVideoRef.current.srcObject) {
+            const audiencePC = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
+            const stream = remoteVideoRef.current.srcObject;
+            stream.getTracks().forEach((track) => audiencePC.addTrack(track, stream));
 
-        socket.on('broadcast-ice', async (candidate) => {
-          if (hostPCRef.current && candidate) {
-            try {
-              await hostPCRef.current.addIceCandidate(new RTCIceCandidate(candidate));
-            } catch (e) {
-              console.error(e);
-            }
+            audiencePC.onicecandidate = (event) => {
+              if (event.candidate) {
+                socket.emit('broadcast-ice', { episodeId, candidate: event.candidate, audienceSocketId });
+              }
+            };
+
+            const offer = await audiencePC.createOffer();
+            await audiencePC.setLocalDescription(offer);
+            socket.emit('broadcast-offer', { audienceSocketId, offer });
           }
         });
 
         await fetchSpeakers();
         await fetchBroadcastStatus();
       } catch (err) {
-        if (isMounted) {
-          setError(err.message);
-          if (err.message.includes('Unauthorized') || err.message.includes('token')) {
-            localStorage.removeItem('token');
-            router.push('/login');
-          }
-        }
+        if (isMounted) setError(err.message);
       }
     };
 
@@ -278,12 +262,8 @@ function StudioContent({ params }) {
     try {
       const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}${endpoint}`, {
         method: 'POST',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
       });
-
       const data = await res.json();
       if (res.ok && data.invitation) {
         const updated = data.invitation;
@@ -309,10 +289,7 @@ function StudioContent({ params }) {
     try {
       await fetch(`${process.env.NEXT_PUBLIC_API_URL}/lower-third/toggle`, {
         method: 'POST',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({
           episode_id: episodeId,
           active: newState,
@@ -328,27 +305,17 @@ function StudioContent({ params }) {
 
   const toggleBroadcast = async () => {
     setLoadingBroadcast(true);
-    setError('');
-
     const token = localStorage.getItem('token');
-    if (!token) {
-      router.push('/login');
-      return;
-    }
+    if (!token) return;
 
     try {
       const endpoint = isLive ? '/media/end' : '/media/start';
       const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}${endpoint}`, {
         method: 'POST',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({ episode_id: episodeId }),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Failed to toggle broadcast.');
-
+      if (!res.ok) throw new Error('Failed to toggle broadcast.');
       setIsLive(!isLive);
     } catch (err) {
       setError(err.message);
@@ -361,7 +328,7 @@ function StudioContent({ params }) {
     <div className="min-h-screen bg-zinc-950 text-zinc-100 flex flex-col font-sans">
       <header className="border-b border-zinc-800 bg-zinc-900/50 backdrop-blur-md px-6 py-4 flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <button onClick={() => router.push('/episodes')} className="text-zinc-400 hover:text-white transition-colors">
+          <button onClick={() => router.push('/episodes')} className="text-zinc-400 hover:text-white">
             <ArrowLeft className="w-5 h-5" />
           </button>
           <div className="w-9 h-9 rounded-lg bg-rose-600/20 border border-rose-500/30 flex items-center justify-center text-rose-500">
@@ -418,7 +385,7 @@ function StudioContent({ params }) {
             onClick={toggleBroadcast}
             disabled={loadingBroadcast}
             className={`flex items-center gap-2 px-6 py-2.5 font-semibold rounded-lg text-xs transition-all shadow-lg ${
-              isLive ? 'bg-amber-600 hover:bg-amber-500 text-white shadow-amber-600/20' : 'bg-rose-600 hover:bg-rose-500 text-white shadow-rose-600/20'
+              isLive ? 'bg-amber-600 hover:bg-amber-500 text-white' : 'bg-rose-600 hover:bg-rose-500 text-white'
             }`}
           >
             {isLive ? <Square className="w-4 h-4" /> : <Play className="w-4 h-4" />}
@@ -434,7 +401,7 @@ function StudioContent({ params }) {
               <div className="relative aspect-video bg-zinc-900 border border-zinc-800 rounded-2xl overflow-hidden shadow-2xl flex items-center justify-center">
                 <video ref={remoteVideoRef} autoPlay playsInline muted={laptopMicMuted} className="w-full h-full object-cover" />
                 {!cameraConnected && (
-                  <div className="absolute inset-0 flex flex-col items-center justify-center bg-zinc-950/80 backdrop-blur-sm p-6 text-center">
+                  <div className="absolute inset-0 flex flex-col items-center justify-center bg-zinc-950/80 p-6 text-center">
                     <VideoOff className="w-12 h-12 text-zinc-600 mb-3" />
                     <h3 className="text-sm font-semibold text-white mb-1">Host Phone Camera Offline</h3>
                     <p className="text-xs text-zinc-400">Scan QR code to connect host feed.</p>
@@ -627,13 +594,7 @@ function StudioContent({ params }) {
 
 export default function OperationalStudioPage({ params }) {
   return (
-    <Suspense
-      fallback={
-        <div className="min-h-screen bg-zinc-950 flex items-center justify-center text-zinc-400">
-          <div className="w-8 h-8 border-2 border-rose-500/20 border-t-rose-500 rounded-full animate-spin" />
-        </div>
-      }
-    >
+    <Suspense fallback={<div className="min-h-screen bg-zinc-950 flex items-center justify-center text-zinc-400">Loading studio...</div>}>
       <StudioContent params={params} />
     </Suspense>
   );

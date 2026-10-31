@@ -14,31 +14,42 @@ function SpeakerJoinContent() {
   const [error, setError] = useState(!token ? 'No invitation token provided.' : '');
   const [status, setStatus] = useState(!token ? 'ERROR' : 'VERIFYING'); // VERIFYING | LOBBY | WAITING | ADMITTED | REJECTED | ERROR
   const [guestName, setGuestName] = useState('');
-  
+
   const localVideoRef = useRef(null);
+  const remoteStudioVideoRef = useRef(null);
   const streamRef = useRef(null);
   const socketRef = useRef(null);
   const pcRef = useRef(null);
 
-  // 1. Verify token asynchronously on load only if token exists
+  // 1. Verify invitation token asynchronously on mount
   useEffect(() => {
     if (!token) return;
+
+    let isMounted = true;
 
     fetch(`${process.env.NEXT_PUBLIC_API_URL}/verify/${token}`)
       .then(async (res) => {
         const data = await res.json();
-        if (!res.ok) throw new Error(data.error || 'Invalid or expired invitation.');
-        setInvitation(data.invitation);
-        setGuestName(data.invitation.speaker_name || '');
-        setStatus('LOBBY');
+        if (!res.ok) throw new Error(data.error || 'Invalid or expired invitation link.');
+        if (isMounted) {
+          setInvitation(data.invitation);
+          setGuestName(data.invitation.speaker_name || '');
+          setStatus('LOBBY');
+        }
       })
       .catch((err) => {
-        setError(err.message);
-        setStatus('ERROR');
+        if (isMounted) {
+          setError(err.message);
+          setStatus('ERROR');
+        }
       });
+
+    return () => {
+      isMounted = false;
+    };
   }, [token]);
 
-  // 2. Enter Waiting Room
+  // 2. Check into the Waiting Room
   const handleEnterWaitingRoom = async () => {
     try {
       const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/join-waiting-room`, {
@@ -52,6 +63,7 @@ function SpeakerJoinContent() {
       setInvitation(data.invitation);
       setStatus('WAITING');
 
+      // Initialize Socket connection to listen for host admission
       const socket = io(process.env.NEXT_PUBLIC_API_URL.replace('/api', ''), {
         transports: ['polling', 'websocket'],
       });
@@ -75,7 +87,7 @@ function SpeakerJoinContent() {
     }
   };
 
-  // 3. Start WebRTC Stream to Studio once Admitted
+  // 3. Establish 2-Way WebRTC Broadcast with Studio upon Admission
   const startBroadcastingToStudio = async (episodeId, speakerId) => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
@@ -94,11 +106,19 @@ function SpeakerJoinContent() {
       });
       pcRef.current = pc;
 
+      // Send guest camera/mic tracks to studio
       stream.getTracks().forEach((track) => pc.addTrack(track, stream));
+
+      // Receive incoming studio/host feed so the guest can see everyone
+      pc.ontrack = (event) => {
+        if (remoteStudioVideoRef.current && event.streams[0]) {
+          remoteStudioVideoRef.current.srcObject = event.streams[0];
+        }
+      };
 
       pc.onicecandidate = (event) => {
         if (event.candidate) {
-          socket.emit('speaker-ice-candidate', { speakerId, candidate: event.candidate, episodeId });
+          socket.emit('speaker-ice-candidate', { speakerId, candidate: event.candidate, episodeId, target: 'studio' });
         }
       };
 
@@ -111,7 +131,7 @@ function SpeakerJoinContent() {
           try {
             await pc.addIceCandidate(new RTCIceCandidate(candidate));
           } catch (e) {
-            console.error(e);
+            console.error('Error adding candidate on guest portal:', e);
           }
         }
       });
@@ -120,7 +140,7 @@ function SpeakerJoinContent() {
       await pc.setLocalDescription(offer);
       socket.emit('speaker-offer', { speakerId, offer, episodeId });
     } catch (err) {
-      console.error('Failed to start guest camera/mic:', err);
+      console.error('Failed to start camera/mic:', err);
       setError('Camera or microphone access was denied.');
     }
   };
@@ -137,18 +157,18 @@ function SpeakerJoinContent() {
         </span>
       </header>
 
-      <main className="flex-1 flex flex-col items-center justify-center p-6 max-w-md mx-auto w-full">
+      <main className="flex-1 flex flex-col items-center justify-center p-6 max-w-xl mx-auto w-full">
         {status === 'VERIFYING' && (
           <div className="text-center space-y-3">
             <div className="w-8 h-8 border-2 border-rose-500/20 border-t-rose-500 rounded-full animate-spin mx-auto" />
-            <p className="text-xs text-zinc-400">Verifying your secure invitation link...</p>
+            <p className="text-xs text-zinc-400">Verifying secure invitation link...</p>
           </div>
         )}
 
         {status === 'ERROR' && (
           <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 text-center space-y-4 w-full">
             <AlertCircle className="w-12 h-12 text-rose-500 mx-auto" />
-            <h2 className="text-lg font-bold text-white">Invalid Link</h2>
+            <h2 className="text-lg font-bold text-white">Invitation Error</h2>
             <p className="text-xs text-zinc-400">{error}</p>
           </div>
         )}
@@ -181,14 +201,26 @@ function SpeakerJoinContent() {
 
         {status === 'ADMITTED' && (
           <div className="w-full space-y-4">
-            <div className="relative aspect-video bg-zinc-900 border border-zinc-800 rounded-2xl overflow-hidden shadow-2xl">
-              <video ref={localVideoRef} autoPlay playsInline muted className="w-full h-full object-cover" />
-              <div className="absolute top-3 left-3 bg-zinc-950/70 backdrop-blur-md px-3 py-1 rounded-lg border border-zinc-800 text-[10px] font-medium text-emerald-400 flex items-center gap-1.5">
-                <CheckCircle2 className="w-3.5 h-3.5" />
-                <span>Connected Live to Studio</span>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* Local Guest Self View */}
+              <div className="relative aspect-video bg-zinc-900 border border-zinc-800 rounded-2xl overflow-hidden shadow-2xl">
+                <video ref={localVideoRef} autoPlay playsInline muted className="w-full h-full object-cover" />
+                <div className="absolute top-3 left-3 bg-zinc-950/70 backdrop-blur-md px-3 py-1 rounded-lg border border-zinc-800 text-[10px] font-medium text-emerald-400 flex items-center gap-1.5">
+                  <CheckCircle2 className="w-3.5 h-3.5" />
+                  <span>Your Feed (Live)</span>
+                </div>
+              </div>
+
+              {/* Incoming Live Studio Feed (Host + Speakers) */}
+              <div className="relative aspect-video bg-zinc-900 border border-zinc-800 rounded-2xl overflow-hidden shadow-2xl flex items-center justify-center">
+                <video ref={remoteStudioVideoRef} autoPlay playsInline muted={false} className="w-full h-full object-cover" />
+                <div className="absolute top-3 left-3 bg-zinc-950/70 backdrop-blur-md px-3 py-1 rounded-lg border border-zinc-800 text-[10px] font-medium text-rose-400 flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse" />
+                  <span>Live Studio Stream</span>
+                </div>
               </div>
             </div>
-            <p className="text-center text-xs text-zinc-400">You are live on air with the host.</p>
+            <p className="text-center text-xs text-zinc-400">You are live on air with the studio team.</p>
           </div>
         )}
 
